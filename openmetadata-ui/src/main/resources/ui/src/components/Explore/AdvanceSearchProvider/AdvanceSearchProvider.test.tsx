@@ -20,7 +20,7 @@ import {
 } from './AdvanceSearchProvider.component';
 
 jest.mock('../../../rest/metadataTypeAPI', () => ({
-  getTypeByFQN: jest.fn().mockResolvedValue({}),
+  getAllCustomProperties: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('../../../rest/tagAPI', () => ({
@@ -49,17 +49,33 @@ jest.mock('../../common/Loader/Loader', () =>
 
 const mockPush = jest.fn();
 
-jest.mock('react-router-dom', () => ({
-  useLocation: jest.fn().mockImplementation(() => ({
+jest.mock('../../../hooks/useCustomLocation/useCustomLocation', () => {
+  return jest.fn().mockImplementation(() => ({
     search: 'queryFilter={"some":"value"}',
     pathname: ROUTES.EXPLORE,
-  })),
+  }));
+});
+
+jest.mock('react-router-dom', () => ({
   useParams: jest.fn().mockReturnValue({
     tab: 'tabValue',
   }),
   useHistory: jest.fn().mockImplementation(() => ({
     push: mockPush,
   })),
+}));
+
+jest.mock('../../../utils/AdvancedSearchClassBase', () => ({
+  __esModule: true,
+  default: {
+    getURLSearchParams: jest.fn().mockReturnValue({}),
+    getQueryFilters: jest.fn().mockReturnValue({}),
+    buildQueryFilter: jest.fn().mockReturnValue({}),
+    createQueryFilter: jest.fn().mockReturnValue({}),
+    handleAdvanceSearchClick: jest.fn(),
+    autocomplete: jest.fn(),
+    getQbConfigs: jest.fn().mockReturnValue({}),
+  },
 }));
 
 const Children = () => {

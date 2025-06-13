@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -12,21 +12,24 @@
 Glue source methods.
 """
 import traceback
-from typing import Any, Iterable, Optional, Tuple, Union
+from typing import Any, Iterable, Optional, Tuple
 
 from metadata.generated.schema.api.data.createDatabase import CreateDatabaseRequest
 from metadata.generated.schema.api.data.createDatabaseSchema import (
     CreateDatabaseSchemaRequest,
 )
-from metadata.generated.schema.api.data.createQuery import CreateQueryRequest
 from metadata.generated.schema.api.data.createStoredProcedure import (
     CreateStoredProcedureRequest,
 )
 from metadata.generated.schema.api.data.createTable import CreateTableRequest
-from metadata.generated.schema.api.lineage.addLineage import AddLineageRequest
 from metadata.generated.schema.entity.data.database import Database
 from metadata.generated.schema.entity.data.databaseSchema import DatabaseSchema
-from metadata.generated.schema.entity.data.table import Column, Table, TableType
+from metadata.generated.schema.entity.data.table import (
+    Column,
+    FileFormat,
+    Table,
+    TableType,
+)
 from metadata.generated.schema.entity.services.connections.database.glueConnection import (
     GlueConnection,
 )
@@ -39,6 +42,11 @@ from metadata.generated.schema.metadataIngestion.databaseServiceMetadataPipeline
 from metadata.generated.schema.metadataIngestion.workflow import (
     Source as WorkflowSource,
 )
+from metadata.generated.schema.type.basic import (
+    EntityName,
+    FullyQualifiedEntityName,
+    Markdown,
+)
 from metadata.ingestion.api.models import Either
 from metadata.ingestion.api.steps import InvalidSourceException
 from metadata.ingestion.models.ometa_classification import OMetaTagAndClassification
@@ -47,6 +55,9 @@ from metadata.ingestion.source.connections import get_connection
 from metadata.ingestion.source.database.column_helpers import truncate_column_name
 from metadata.ingestion.source.database.column_type_parser import ColumnTypeParser
 from metadata.ingestion.source.database.database_service import DatabaseServiceSource
+from metadata.ingestion.source.database.external_table_lineage_mixin import (
+    ExternalTableLineageMixin,
+)
 from metadata.ingestion.source.database.glue.models import Column as GlueColumn
 from metadata.ingestion.source.database.glue.models import (
     DatabasePage,
@@ -61,7 +72,7 @@ from metadata.utils.logger import ingestion_logger
 logger = ingestion_logger()
 
 
-class GlueSource(DatabaseServiceSource):
+class GlueSource(ExternalTableLineageMixin, DatabaseServiceSource):
     """
     Implements the necessary methods to extract
     Database metadata from Glue Source
@@ -74,18 +85,20 @@ class GlueSource(DatabaseServiceSource):
             self.config.sourceConfig.config
         )
         self.metadata = metadata
-        self.service_connection = self.config.serviceConnection.__root__.config
+        self.service_connection = self.config.serviceConnection.root.config
         self.glue = get_connection(self.service_connection)
 
         self.connection_obj = self.glue
+        self.schema_description_map = {}
+        self.external_location_map = {}
         self.test_connection()
 
     @classmethod
     def create(
         cls, config_dict, metadata: OpenMetadata, pipeline_name: Optional[str] = None
     ):
-        config: WorkflowSource = WorkflowSource.parse_obj(config_dict)
-        connection: GlueConnection = config.serviceConnection.__root__.config
+        config: WorkflowSource = WorkflowSource.model_validate(config_dict)
+        connection: GlueConnection = config.serviceConnection.root.config
         if not isinstance(connection, GlueConnection):
             raise InvalidSourceException(
                 f"Expected GlueConnection, but got {connection}"
@@ -190,6 +203,10 @@ class GlueSource(DatabaseServiceSource):
                     ):
                         self.status.filter(schema_fqn, "Schema Filtered Out")
                         continue
+                    if schema.Description:
+                        self.schema_description_map[schema.Name] = Markdown(
+                            schema.Description
+                        )
                     yield schema.Name
                 except Exception as exc:
                     self.status.failed(
@@ -209,12 +226,15 @@ class GlueSource(DatabaseServiceSource):
         """
         yield Either(
             right=CreateDatabaseSchemaRequest(
-                name=schema_name,
-                database=fqn.build(
-                    metadata=self.metadata,
-                    entity_type=Database,
-                    service_name=self.context.get().database_service,
-                    database_name=self.context.get().database,
+                name=EntityName(schema_name),
+                description=self.schema_description_map.get(schema_name),
+                database=FullyQualifiedEntityName(
+                    fqn.build(
+                        metadata=self.metadata,
+                        entity_type=Database,
+                        service_name=self.context.get().database_service,
+                        database_name=self.context.get().database,
+                    )
                 ),
                 sourceUrl=self.get_source_url(
                     database_name=self.context.get().database,
@@ -283,7 +303,7 @@ class GlueSource(DatabaseServiceSource):
                     )
 
     def yield_table(
-        self, table_name_and_type: Tuple[str, str]
+        self, table_name_and_type: Tuple[str, TableType]
     ) -> Iterable[Either[CreateTableRequest]]:
         """
         From topology.
@@ -292,27 +312,38 @@ class GlueSource(DatabaseServiceSource):
         table_name, table_type = table_name_and_type
         table = self.context.get().table_data
         table_constraints = None
+        storage_descriptor = table.StorageDescriptor
+        database_name = self.context.get().database
+        schema_name = self.context.get().database_schema
+        if storage_descriptor.Location:
+            # s3a doesn't occur as a path in containers, so it needs to be replaced for lineage to work
+            self.external_location_map[
+                (database_name, schema_name, table_name)
+            ] = storage_descriptor.Location.replace("s3a://", "s3://")
         try:
-            columns = self.get_columns(table.StorageDescriptor)
-
+            columns = self.get_columns(storage_descriptor)
             table_request = CreateTableRequest(
-                name=table_name,
+                name=EntityName(table_name),
                 tableType=table_type,
                 description=table.Description,
-                columns=columns,
+                columns=list(columns),
                 tableConstraints=table_constraints,
-                databaseSchema=fqn.build(
-                    metadata=self.metadata,
-                    entity_type=DatabaseSchema,
-                    service_name=self.context.get().database_service,
-                    database_name=self.context.get().database,
-                    schema_name=self.context.get().database_schema,
+                databaseSchema=FullyQualifiedEntityName(
+                    fqn.build(
+                        metadata=self.metadata,
+                        entity_type=DatabaseSchema,
+                        service_name=self.context.get().database_service,
+                        database_name=database_name,
+                        schema_name=schema_name,
+                    )
                 ),
                 sourceUrl=self.get_source_url(
                     table_name=table_name,
                     schema_name=self.context.get().database_schema,
                     database_name=self.context.get().database,
                 ),
+                fileFormat=self.get_format(storage_descriptor),
+                locationPath=storage_descriptor.Location,
             )
             yield Either(right=table_request)
             self.register_record(table_request=table_request)
@@ -355,11 +386,21 @@ class GlueSource(DatabaseServiceSource):
         for column in self.context.get().table_data.PartitionKeys:
             yield self._get_column_object(column)
 
+    @classmethod
+    def get_format(cls, storage: StorageDetails) -> Optional[FileFormat]:
+        library = storage.SerdeInfo.SerializationLibrary
+        if library is None:
+            return None
+        if library.endswith(".LazySimpleSerDe"):
+            return (
+                FileFormat.tsv
+                if storage.SerdeInfo.Parameters.get("serialization.format") == "\t"
+                else FileFormat.csv
+            )
+        return next((fmt for fmt in FileFormat if fmt.value in library.lower()), None)
+
     def standardize_table_name(self, _: str, table: str) -> str:
         return table[:128]
-
-    def yield_view_lineage(self) -> Iterable[Either[AddLineageRequest]]:
-        yield from []
 
     def yield_tag(
         self, schema_name: str
@@ -376,12 +417,6 @@ class GlueSource(DatabaseServiceSource):
 
     def get_stored_procedure_queries(self) -> Iterable[QueryByProcedure]:
         """Not Implemented"""
-
-    def yield_procedure_lineage_and_queries(
-        self,
-    ) -> Iterable[Either[Union[AddLineageRequest, CreateQueryRequest]]]:
-        """Not Implemented"""
-        yield from []
 
     def get_source_url(
         self,

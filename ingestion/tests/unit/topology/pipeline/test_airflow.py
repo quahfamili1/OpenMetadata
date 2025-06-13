@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -13,6 +13,13 @@ Test Airflow processing
 """
 from unittest import TestCase
 from unittest.mock import patch
+
+import pytest
+
+try:
+    import airflow  # noqa: F401
+except ImportError:
+    pytest.skip("Airflow dependencies not installed", allow_module_level=True)
 
 from metadata.generated.schema.metadataIngestion.workflow import (
     OpenMetadataWorkflowConfig,
@@ -168,7 +175,7 @@ class TestAirflow(TestCase):
     def __init__(self, methodName, test_connection) -> None:
         super().__init__(methodName)
         test_connection.return_value = False
-        self.config = OpenMetadataWorkflowConfig.parse_obj(MOCK_CONFIG)
+        self.config = OpenMetadataWorkflowConfig.model_validate(MOCK_CONFIG)
 
         # This already validates that the source can be initialized
         self.airflow: AirflowSource = AirflowSource.create(
@@ -187,7 +194,7 @@ class TestAirflow(TestCase):
         dag = AirflowDagDetails(
             dag_id="id",
             fileloc="loc",
-            data=AirflowDag.parse_obj(SERIALIZED_DAG),
+            data=AirflowDag.model_validate(SERIALIZED_DAG),
             max_active_runs=data.get("max_active_runs", None),
             description=data.get("_description", None),
             start_date=data.get("start_date", None),

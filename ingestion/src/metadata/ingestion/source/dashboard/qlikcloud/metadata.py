@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -11,7 +11,7 @@
 """QlikCloud source module"""
 
 import traceback
-from typing import Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from metadata.generated.schema.api.data.createChart import CreateChartRequest
 from metadata.generated.schema.api.data.createDashboard import CreateDashboardRequest
@@ -32,15 +32,26 @@ from metadata.generated.schema.entity.services.ingestionPipelines.status import 
 from metadata.generated.schema.metadataIngestion.workflow import (
     Source as WorkflowSource,
 )
+from metadata.generated.schema.type.basic import (
+    EntityName,
+    FullyQualifiedEntityName,
+    Markdown,
+    SourceUrl,
+)
 from metadata.ingestion.api.models import Either
 from metadata.ingestion.api.steps import InvalidSourceException
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
 from metadata.ingestion.source.dashboard.qlikcloud.client import QlikCloudClient
-from metadata.ingestion.source.dashboard.qlikcloud.models import QlikApp, QlikAppList
+from metadata.ingestion.source.dashboard.qlikcloud.models import (
+    QlikApp,
+    QlikSpace,
+    QlikSpaceType,
+)
 from metadata.ingestion.source.dashboard.qliksense.metadata import QliksenseSource
 from metadata.ingestion.source.dashboard.qliksense.models import QlikTable
 from metadata.utils import fqn
-from metadata.utils.filters import filter_by_chart
+from metadata.utils.filters import filter_by_chart, filter_by_project
+from metadata.utils.fqn import build_es_fqn_search_string
 from metadata.utils.helpers import clean_uri
 from metadata.utils.logger import ingestion_logger
 
@@ -60,8 +71,8 @@ class QlikcloudSource(QliksenseSource):
     def create(
         cls, config_dict, metadata: OpenMetadata, pipeline_name: Optional[str] = None
     ):
-        config = WorkflowSource.parse_obj(config_dict)
-        connection: QlikCloudConnection = config.serviceConnection.__root__.config
+        config = WorkflowSource.model_validate(config_dict)
+        connection: QlikCloudConnection = config.serviceConnection.root.config
         if not isinstance(connection, QlikCloudConnection):
             raise InvalidSourceException(
                 f"Expected QlikCloudConnection, but got {connection}"
@@ -74,8 +85,40 @@ class QlikcloudSource(QliksenseSource):
         metadata: OpenMetadata,
     ):
         super().__init__(config, metadata)
-        self.collections: List[QlikAppList] = []
+        self.projects_map: Dict[str, QlikSpace] = {}
+        self.collections: List[QlikApp] = []
         self.data_models: List[QlikTable] = []
+
+    def prepare(self):
+        """
+        Get all spaces/projects from QlikCloud to filter out dashboards.
+        """
+        spaces = self.client.get_projects_list()
+        for space in spaces:
+            self.projects_map[space.id] = space
+        self.projects_map[""] = QlikSpace(
+            name="Personal",
+            description="Represents personal space of QlikCloud.",
+            id="",  # dashboards under personal space have spaceId=""
+            type=QlikSpaceType.PERSONAL,
+        )
+
+        return super().prepare()
+
+    def filter_projects_by_type(self, project: QlikSpace) -> bool:
+        """
+        Filter space based on space types configured in connection config.
+        """
+        spaceTypes = self.service_connection.spaceTypes
+        if spaceTypes is None:
+            return False
+        return project.type.value not in [space_type.value for space_type in spaceTypes]
+
+    def is_personal_project(self, project: QlikSpace) -> bool:
+        """
+        Check if space is a personal space.
+        """
+        return project.type == QlikSpaceType.PERSONAL
 
     def filter_draft_dashboard(self, dashboard: QlikApp) -> bool:
         # When only published(non-draft) dashboards are allowed, filter dashboard based on "published" flag from QlikApp
@@ -90,6 +133,21 @@ class QlikcloudSource(QliksenseSource):
         for dashboard in self.client.get_dashboards_list():
             if self.filter_draft_dashboard(dashboard):
                 # Skip unpublished dashboards
+                continue
+            if dashboard.space_id not in self.projects_map:
+                logger.warning(
+                    f"Project ID '{dashboard.space_id}' for Dashboard '{dashboard.name}' is not present"
+                    " in projects map"
+                )
+                continue
+            project = self.projects_map[dashboard.space_id]
+            if self.filter_projects_by_type(project):
+                # Skip dashboard based on space type filter
+                continue
+            if not self.is_personal_project(project) and filter_by_project(
+                self.service_connection.projectFilterPattern, project.name
+            ):
+                # Skip dashboard based on project filter pattern
                 continue
             # clean data models for next iteration
             self.data_models = []
@@ -117,22 +175,28 @@ class QlikcloudSource(QliksenseSource):
             dashboard_url = f"{clean_uri(self.service_connection.hostPort)}/sense/app/{dashboard_details.id}/overview"
 
             dashboard_request = CreateDashboardRequest(
-                name=dashboard_details.id,
-                sourceUrl=dashboard_url,
+                name=EntityName(dashboard_details.id),
+                sourceUrl=SourceUrl(dashboard_url),
                 displayName=dashboard_details.name,
-                description=dashboard_details.description,
+                description=(
+                    Markdown(dashboard_details.description)
+                    if dashboard_details.description
+                    else None
+                ),
                 project=self.context.get().project_name,
                 charts=[
-                    fqn.build(
-                        self.metadata,
-                        entity_type=Chart,
-                        service_name=self.context.get().dashboard_service,
-                        chart_name=chart,
+                    FullyQualifiedEntityName(
+                        fqn.build(
+                            self.metadata,
+                            entity_type=Chart,
+                            service_name=self.context.get().dashboard_service,
+                            chart_name=chart,
+                        )
                     )
                     for chart in self.context.get().charts or []
                 ],
-                service=self.context.get().dashboard_service,
-                owner=self.get_owner_ref(dashboard_details=dashboard_details),
+                service=FullyQualifiedEntityName(self.context.get().dashboard_service),
+                owners=self.get_owner_ref(dashboard_details=dashboard_details),
             )
             yield Either(right=dashboard_request)
             self.register_record(dashboard_request=dashboard_request)
@@ -160,7 +224,7 @@ class QlikcloudSource(QliksenseSource):
                 table_fqn = fqn.build(
                     self.metadata,
                     entity_type=Table,
-                    service_name=db_service_entity.name.__root__,
+                    service_name=db_service_entity.name.root,
                     schema_name=schema_name,
                     table_name=data_model_entity.displayName,
                     database_name=database_name,
@@ -178,18 +242,22 @@ class QlikcloudSource(QliksenseSource):
     def yield_dashboard_lineage_details(
         self,
         dashboard_details: QlikApp,
-        db_service_name: Optional[str],
+        db_service_name: Optional[str] = None,
     ) -> Iterable[Either[AddLineageRequest]]:
         """Get lineage method"""
-        db_service_entity = self.metadata.get_by_name(
-            entity=DatabaseService, fqn=db_service_name
-        )
         for datamodel in self.data_models or []:
             try:
                 data_model_entity = self._get_datamodel(datamodel_id=datamodel.id)
                 if data_model_entity:
-                    om_table = self._get_database_table(
-                        db_service_entity, data_model_entity
+                    fqn_search_string = build_es_fqn_search_string(
+                        database_name=None,
+                        schema_name=None,
+                        service_name=db_service_name or "*",
+                        table_name=data_model_entity.displayName,
+                    )
+                    om_table = self.metadata.search_in_any_service(
+                        entity_type=Table,
+                        fqn_search_string=fqn_search_string,
                     )
                     if om_table:
                         columns_list = [col.name for col in datamodel.fields]
@@ -231,11 +299,15 @@ class QlikcloudSource(QliksenseSource):
                     continue
                 yield Either(
                     right=CreateChartRequest(
-                        name=chart.qInfo.qId,
+                        name=EntityName(chart.qInfo.qId),
                         displayName=chart.qMeta.title,
-                        description=chart.qMeta.description,
+                        description=(
+                            Markdown(chart.qMeta.description)
+                            if chart.qMeta.description
+                            else None
+                        ),
                         chartType=ChartType.Other,
-                        sourceUrl=chart_url,
+                        sourceUrl=SourceUrl(chart_url),
                         service=self.context.get().dashboard_service,
                     )
                 )

@@ -20,10 +20,17 @@ import { useTranslation } from 'react-i18next';
 import { DESCRIPTION_MAX_PREVIEW_CHARACTERS } from '../../../constants/constants';
 import { formatContent, isHTMLString } from '../../../utils/BlockEditorUtils';
 import { getTrimmedContent } from '../../../utils/CommonUtils';
-import { customHTMLRenderer } from './CustomHtmlRederer/CustomHtmlRederer';
+import {
+  customHTMLRenderer,
+  replaceLatex,
+} from './CustomHtmlRederer/CustomHtmlRederer';
 import './rich-text-editor-previewer.less';
 import { PreviewerProp } from './RichTextEditor.interface';
 
+/**
+ * @deprecated This component is deprecated and will be removed in future releases.
+ * Please use {@link https://github.com/open-metadata/OpenMetadata/blob/main/openmetadata-ui/src/main/resources/ui/src/components/common/RichTextEditor/RichTextEditorPreviewerV1.tsx|RichTextEditorPreviewerV1} instead of this component.
+ */
 const RichTextEditorPreviewer = ({
   markdown = '',
   className = '',
@@ -32,6 +39,7 @@ const RichTextEditorPreviewer = ({
   showReadMoreBtn = true,
   maxLength = DESCRIPTION_MAX_PREVIEW_CHARACTERS,
   isDescriptionExpanded = false,
+  reducePreviewLineClass,
 }: PreviewerProp) => {
   const { t, i18n } = useTranslation();
   const [content, setContent] = useState<string>('');
@@ -107,12 +115,16 @@ const RichTextEditorPreviewer = ({
       data-testid="viewer-container"
       dir={i18n.dir()}>
       <div
-        className={classNames('markdown-parser', textVariant)}
+        className={classNames(
+          'markdown-parser',
+          textVariant,
+          readMore ? '' : reducePreviewLineClass
+        )}
         data-testid="markdown-parser">
         <Viewer
           extendedAutolinks
           customHTMLRenderer={customHTMLRenderer}
-          initialValue={viewerValue}
+          initialValue={replaceLatex(viewerValue)}
           key={uniqueId()}
           linkAttributes={{ target: '_blank' }}
         />

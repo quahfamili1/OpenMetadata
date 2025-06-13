@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -21,7 +21,6 @@ from pydantic import BaseModel
 from requests.exceptions import HTTPError
 
 from metadata.config.common import ConfigModel
-from metadata.data_insight.source.metadata import DataInsightRecord
 from metadata.data_quality.api.models import TestCaseResultResponse, TestCaseResults
 from metadata.generated.schema.analytics.reportData import ReportData
 from metadata.generated.schema.api.lineage.addLineage import AddLineageRequest
@@ -35,7 +34,7 @@ from metadata.generated.schema.api.tests.createTestSuite import CreateTestSuiteR
 from metadata.generated.schema.dataInsight.kpi.basic import KpiResult
 from metadata.generated.schema.entity.classification.tag import Tag
 from metadata.generated.schema.entity.data.dashboard import Dashboard
-from metadata.generated.schema.entity.data.pipeline import PipelineStatus
+from metadata.generated.schema.entity.data.pipeline import Pipeline, PipelineStatus
 from metadata.generated.schema.entity.data.searchIndex import (
     SearchIndex,
     SearchIndexSampleData,
@@ -51,6 +50,7 @@ from metadata.generated.schema.tests.testCaseResolutionStatus import (
     TestCaseResolutionStatus,
 )
 from metadata.generated.schema.tests.testSuite import TestSuite
+from metadata.generated.schema.type.entityLineage import Source as LineageSource
 from metadata.generated.schema.type.schema import Topic
 from metadata.ingestion.api.models import Either, Entity, StackTraceError
 from metadata.ingestion.api.steps import Sink
@@ -59,6 +59,7 @@ from metadata.ingestion.models.data_insight import OMetaDataInsightSample
 from metadata.ingestion.models.delete_entity import DeleteEntity
 from metadata.ingestion.models.life_cycle import OMetaLifeCycleData
 from metadata.ingestion.models.ometa_classification import OMetaTagAndClassification
+from metadata.ingestion.models.ometa_lineage import OMetaLineageRequest
 from metadata.ingestion.models.ometa_topic_data import OMetaTopicSampleData
 from metadata.ingestion.models.patch_request import (
     ALLOWED_COMMON_PATCH_FIELDS,
@@ -78,11 +79,13 @@ from metadata.ingestion.models.tests_data import (
     OMetaTestSuiteSample,
 )
 from metadata.ingestion.models.user import OMetaUserProfile
-from metadata.ingestion.ometa.client import APIError
+from metadata.ingestion.ometa.client import APIError, LimitsException
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
 from metadata.ingestion.source.dashboard.dashboard_service import DashboardUsage
 from metadata.ingestion.source.database.database_service import DataModelLink
+from metadata.ingestion.source.pipeline.pipeline_service import PipelineUsage
 from metadata.profiler.api.models import ProfilerResponse
+from metadata.sampler.models import SamplerResponse
 from metadata.utils.execution_time_tracker import calculate_execution_time
 from metadata.utils.logger import get_log_name, ingestion_logger
 
@@ -115,6 +118,7 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
         self.metadata = metadata
         self.role_entities = {}
         self.team_entities = {}
+        self.limit_reached = set()
 
     @classmethod
     def create(
@@ -123,7 +127,7 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
         metadata: OpenMetadata,
         pipeline_name: Optional[str] = None,
     ):
-        config = MetadataRestSinkConfig.parse_obj(config_dict)
+        config = MetadataRestSinkConfig.model_validate(config_dict)
         return cls(config, metadata)
 
     @property
@@ -163,16 +167,30 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
         Send to OM the request creation received as is.
         :param entity_request: Create Entity request
         """
-        created = self.metadata.create_or_update(entity_request)
-        if created:
-            return Either(right=created)
+        if type(entity_request).__name__ in self.limit_reached:
+            # If the limit has been reached, we don't need to try to ingest the entity
+            # Note: We use PatchRequest to update the entity, so updating is not affected by the limit
+            return None
+        try:
+            created = self.metadata.create_or_update(entity_request)
+            if created:
+                return Either(right=created)
 
-        error = f"Failed to ingest {type(entity_request).__name__}"
-        return Either(
-            left=StackTraceError(
-                name=type(entity_request).__name__, error=error, stackTrace=None
+            error = f"Failed to ingest {type(entity_request).__name__}"
+            return Either(
+                left=StackTraceError(
+                    name=type(entity_request).__name__, error=error, stackTrace=None
+                )
             )
-        )
+        except LimitsException as _:
+            self.limit_reached.add(type(entity_request).__name__)
+            return Either(
+                left=StackTraceError(
+                    name=type(entity_request).__name__,
+                    error=f"Limit reached for {type(entity_request).__name__}",
+                    stackTrace=None,
+                )
+            )
 
     @_run_dispatch.register
     def patch_entity(self, record: PatchRequest) -> Either[Entity]:
@@ -186,6 +204,7 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
             allowed_fields=ALLOWED_COMMON_PATCH_FIELDS,
             restrict_update_fields=RESTRICT_UPDATE_LIST,
             array_entity_fields=ARRAY_ENTITY_FIELDS,
+            override_metadata=record.override_metadata,
         )
         patched_entity = PatchedEntity(new_entity=entity) if entity else None
         return Either(right=patched_entity)
@@ -247,7 +266,61 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
     @_run_dispatch.register
     def write_lineage(self, add_lineage: AddLineageRequest) -> Either[Dict[str, Any]]:
         created_lineage = self.metadata.add_lineage(add_lineage, check_patch=True)
+        if created_lineage.get("error"):
+            return Either(
+                left=StackTraceError(
+                    name="AddLineageRequestError", error=created_lineage["error"]
+                )
+            )
+
         return Either(right=created_lineage["entity"]["fullyQualifiedName"])
+
+    @_run_dispatch.register
+    def write_override_lineage(
+        self, add_lineage: OMetaLineageRequest
+    ) -> Either[Dict[str, Any]]:
+        """
+        Writes the override lineage for the given lineage request.
+
+        Args:
+            add_lineage (OMetaLineageRequest): The lineage request containing the override lineage information.
+
+        Returns:
+            Either[Dict[str, Any]]: The result of the dispatch operation.
+        """
+        if (
+            add_lineage.override_lineage is True
+            and add_lineage.lineage_request.edge.lineageDetails
+            and add_lineage.lineage_request.edge.lineageDetails.source
+        ):
+            if (
+                add_lineage.lineage_request.edge.lineageDetails.pipeline
+                and add_lineage.lineage_request.edge.lineageDetails.source
+                == LineageSource.PipelineLineage
+            ):
+                self.metadata.delete_lineage_by_source(
+                    entity_type="pipeline",
+                    entity_id=str(
+                        add_lineage.lineage_request.edge.lineageDetails.pipeline.id.root
+                    ),
+                    source=add_lineage.lineage_request.edge.lineageDetails.source.value,
+                )
+            else:
+                self.metadata.delete_lineage_by_source(
+                    entity_type=add_lineage.lineage_request.edge.toEntity.type,
+                    entity_id=str(add_lineage.lineage_request.edge.toEntity.id.root),
+                    source=add_lineage.lineage_request.edge.lineageDetails.source.value,
+                )
+        lineage_response = self._run_dispatch(add_lineage.lineage_request)
+        if (
+            lineage_response
+            and lineage_response.right is not None
+            and add_lineage.entity_fqn
+            and add_lineage.entity
+        ):
+            self.metadata.patch_lineage_processed_flag(
+                entity=add_lineage.entity, fqn=add_lineage.entity_fqn
+            )
 
     def _create_role(self, create_role: CreateRoleRequest) -> Optional[Role]:
         """
@@ -255,7 +328,7 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
         """
         try:
             role = self.metadata.create_or_update(create_role)
-            self.role_entities[role.name] = str(role.id.__root__)
+            self.role_entities[role.name] = str(role.id.root)
             return role
         except Exception as exc:
             logger.debug(traceback.format_exc())
@@ -269,14 +342,28 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
         """
         try:
             team = self.metadata.create_or_update(create_team)
-            self.team_entities[team.name.__root__] = str(team.id.__root__)
+            self.team_entities[team.name.root] = str(team.id.root)
             return team
+        except LimitsException as _:
+            if type(create_team).__name__ in self.limit_reached:
+                # Note: We do not have a way to patch the team,
+                # so we try to put and handle exception
+                return None
+            self.limit_reached.add(type(create_team).__name__)
+            return Either(
+                left=StackTraceError(
+                    name=type(create_team).__name__,
+                    error=f"Limit reached for {type(create_team).__name__}",
+                    stackTrace=None,
+                )
+            )
         except Exception as exc:
             logger.debug(traceback.format_exc())
             logger.error(f"Unexpected error creating team [{create_team}]: {exc}")
 
         return None
 
+    # pylint: disable=too-many-branches
     @_run_dispatch.register
     def write_users(self, record: OMetaUserProfile) -> Either[User]:
         """
@@ -292,7 +379,7 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
             for role in record.roles:
                 try:
                     role_entity = self.metadata.get_by_name(
-                        entity=Role, fqn=str(role.name.__root__)
+                        entity=Role, fqn=str(role.name.root)
                     )
                 except APIError:
                     role_entity = self._create_role(role)
@@ -307,18 +394,16 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
             for team in record.teams:
                 try:
                     team_entity = self.metadata.get_by_name(
-                        entity=Team, fqn=str(team.name.__root__)
+                        entity=Team, fqn=str(team.name.root)
                     )
                     if not team_entity:
                         raise APIError(
-                            error={
-                                "message": f"Creating a new team {team.name.__root__}"
-                            }
+                            error={"message": f"Creating a new team {team.name.root}"}
                         )
-                    team_ids.append(team_entity.id.__root__)
+                    team_ids.append(team_entity.id.root)
                 except APIError:
                     team_entity = self._create_team(team)
-                    team_ids.append(team_entity.id.__root__)
+                    team_ids.append(team_entity.id.root)
                 except Exception as exc:
                     logger.debug(traceback.format_exc())
                     logger.warning(f"Unexpected error writing team [{team}]: {exc}")
@@ -326,14 +411,28 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
             team_ids = None
 
         # Update user data with the new Role and Team IDs
-        user_profile = record.user.dict(exclude_unset=True)
+        user_profile = record.user.model_dump(exclude_unset=True)
         user_profile["roles"] = role_ids
         user_profile["teams"] = team_ids
         metadata_user = CreateUserRequest(**user_profile)
 
         # Create user
-        user = self.metadata.create_or_update(metadata_user)
-        return Either(right=user)
+        try:
+            user = self.metadata.create_or_update(metadata_user)
+            return Either(right=user)
+        except LimitsException as _:
+            if type(metadata_user).__name__ in self.limit_reached:
+                # Note: We do not have a way to patch the user,
+                # so we try to put and handle exception
+                return None
+            self.limit_reached.add(type(metadata_user).__name__)
+            return Either(
+                left=StackTraceError(
+                    name=type(metadata_user).__name__,
+                    error=f"Limit reached for {type(metadata_user).__name__}",
+                    stackTrace=None,
+                )
+            )
 
     @_run_dispatch.register
     def delete_entity(self, record: DeleteEntity) -> Either[Entity]:
@@ -421,10 +520,10 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
         """Write the test case result"""
         res = self.metadata.add_test_case_results(
             test_results=record.testCaseResult,
-            test_case_fqn=record.testCase.fullyQualifiedName.__root__,
+            test_case_fqn=record.testCase.fullyQualifiedName.root,
         )
         logger.debug(
-            f"Successfully ingested test case results for test case {record.testCase.name.__root__}"
+            f"Successfully ingested test case results for test case {record.testCase.name.root}"
         )
         return Either(right=res)
 
@@ -450,19 +549,11 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
         return Either(right=record.record)
 
     @_run_dispatch.register
-    def write_data_insight(self, record: DataInsightRecord) -> Either[ReportData]:
-        """
-        Use the /dataQuality/testCases endpoint to ingest sample test suite
-        """
-        self.metadata.add_data_insight_report_data(record.data)
-        return Either(left=None, right=record.data)
-
-    @_run_dispatch.register
     def write_data_insight_kpi(self, record: KpiResult) -> Either[KpiResult]:
         """
         Use the /dataQuality/testCases endpoint to ingest sample test suite
         """
-        self.metadata.add_kpi_result(fqn=record.kpiFqn.__root__, record=record)
+        self.metadata.add_kpi_result(fqn=record.kpiFqn.root, record=record)
         return Either(left=None, right=record)
 
     @_run_dispatch.register
@@ -519,6 +610,41 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
         )
 
     @_run_dispatch.register
+    def write_sampler_response(self, record: SamplerResponse) -> Either[Table]:
+        """Ingest the sample data - if needed - and the PII tags"""
+        if record.sample_data and record.sample_data.store:
+            table_data = self.metadata.ingest_table_sample_data(
+                table=record.table, sample_data=record.sample_data.data
+            )
+            if not table_data:
+                self.status.failed(
+                    StackTraceError(
+                        name=record.table.fullyQualifiedName.root,
+                        error="Error trying to ingest sample data for table",
+                    )
+                )
+            else:
+                logger.debug(
+                    f"Successfully ingested sample data for {record.table.fullyQualifiedName.root}"
+                )
+
+        if record.column_tags:
+            patched = self.metadata.patch_column_tags(
+                table=record.table, column_tags=record.column_tags
+            )
+            if not patched:
+                self.status.warning(
+                    key=record.table.fullyQualifiedName.root,
+                    reason="Error patching tags for table",
+                )
+            else:
+                logger.debug(
+                    f"Successfully patched tag {record.column_tags} for {record.table.fullyQualifiedName.root}"
+                )
+
+        return Either(right=record.table)
+
+    @_run_dispatch.register
     def write_profiler_response(self, record: ProfilerResponse) -> Either[Table]:
         """Cleanup "`" character in columns and ingest"""
         column_profile = record.profile.columnProfile
@@ -532,41 +658,8 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
             profile_request=record.profile,
         )
         logger.debug(
-            f"Successfully ingested profile metrics for {record.table.fullyQualifiedName.__root__}"
+            f"Successfully ingested profile metrics for {record.table.fullyQualifiedName.root}"
         )
-
-        if record.sample_data:
-            table_data = self.metadata.ingest_table_sample_data(
-                table=record.table, sample_data=record.sample_data
-            )
-            if not table_data:
-                self.status.failed(
-                    StackTraceError(
-                        name=table.fullyQualifiedName.__root__,
-                        error="Error trying to ingest sample data for table",
-                    )
-                )
-            else:
-                logger.debug(
-                    f"Successfully ingested sample data for {record.table.fullyQualifiedName.__root__}"
-                )
-
-        if record.column_tags:
-            patched = self.metadata.patch_column_tags(
-                table=record.table, column_tags=record.column_tags
-            )
-            if not patched:
-                self.status.failed(
-                    StackTraceError(
-                        name=table.fullyQualifiedName.__root__,
-                        error="Error patching tags for table",
-                    )
-                )
-            else:
-                logger.debug(
-                    f"Successfully patched tag {record.column_tags} for {record.table.fullyQualifiedName.__root__}"
-                )
-
         return Either(right=table)
 
     @_run_dispatch.register
@@ -586,11 +679,23 @@ class MetadataRestSink(Sink):  # pylint: disable=too-many-public-methods
         for result in record.test_results or []:
             self.metadata.add_test_case_results(
                 test_results=result.testCaseResult,
-                test_case_fqn=result.testCase.fullyQualifiedName.__root__,
+                test_case_fqn=result.testCase.fullyQualifiedName.root,
             )
             self.status.scanned(result)
 
         return Either(right=record)
+
+    @_run_dispatch.register
+    def write_pipeline_usage(self, pipeline_usage: PipelineUsage) -> Either[Pipeline]:
+        """
+        Send a UsageRequest update to a pipeline entity
+        :param pipeline_usage: pipeline entity and usage request
+        """
+        self.metadata.publish_pipeline_usage(
+            pipeline=pipeline_usage.pipeline,
+            pipeline_usage_request=pipeline_usage.usage,
+        )
+        return Either(right=pipeline_usage.pipeline)
 
     def close(self):
         """

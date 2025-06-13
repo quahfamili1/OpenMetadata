@@ -38,13 +38,6 @@ export const STEPS_FOR_ADD_TEST_SUITE: Array<StepperStepType> = [
   },
 ];
 
-export const TEST_SUITE_BREADCRUMB = [
-  {
-    name: TEST_SUITE_LABEL,
-    url: '',
-    activeTitle: true,
-  },
-];
 export const TEST_SUITE_STEPPER_BREADCRUMB = [
   {
     name: TEST_SUITE_LABEL,
@@ -85,3 +78,7 @@ export const TEST_CASE_STATUS: Record<
   ],
   [TestCaseResolutionStatusTypes.Resolved]: [],
 };
+
+export const TABLE_DIFF = 'tableDiff';
+export const TABLE_DATA_TO_BE_FRESH = 'tableDataToBeFresh';
+export const TABLE_FRESHNESS_KEY = 'freshness';

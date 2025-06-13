@@ -3,6 +3,7 @@ package org.openmetadata.service.security.mask;
 import static org.openmetadata.common.utils.CommonUtil.listOrEmpty;
 import static org.openmetadata.service.jdbi3.TopicRepository.getAllFieldTags;
 
+import jakarta.ws.rs.core.SecurityContext;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -13,7 +14,6 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import javax.ws.rs.core.SecurityContext;
 import org.openmetadata.schema.entity.data.Query;
 import org.openmetadata.schema.entity.data.SearchIndex;
 import org.openmetadata.schema.entity.data.Table;
@@ -184,8 +184,8 @@ public class PIIMasker {
                         Entity.getEntityByName(
                             Entity.TABLE,
                             testCaseLink.getEntityFQN(),
-                            "owner,tags,columns",
-                            Include.NON_DELETED);
+                            "owners,tags,columns",
+                            Include.ALL);
                     entityFQNToTable.put(testCaseLink.getEntityFQN(), table);
                   }
 
@@ -205,7 +205,7 @@ public class PIIMasker {
                     Column col = referencedColumn.get();
                     // We need the table owner to know if we can authorize the access
                     boolean authorizePII =
-                        authorizer.authorizePII(securityContext, table.getOwner());
+                        authorizer.authorizePII(securityContext, table.getOwners());
                     if (!authorizePII) return PIIMasker.getTestCase(col, testCase);
                     return testCase;
                   }
@@ -232,7 +232,8 @@ public class PIIMasker {
         queries.getData().stream()
             .map(
                 query -> {
-                  boolean authorizePII = authorizer.authorizePII(securityContext, query.getOwner());
+                  boolean authorizePII =
+                      authorizer.authorizePII(securityContext, query.getOwners());
                   if (!authorizePII) return PIIMasker.getQuery(query);
                   return query;
                 })

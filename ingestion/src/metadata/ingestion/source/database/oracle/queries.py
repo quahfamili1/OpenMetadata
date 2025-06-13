@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,7 +20,7 @@ SELECT
 	comments table_comment,
 	LOWER(table_name) "table_name",
 	LOWER(owner) "schema" 	
-FROM ALL_TAB_COMMENTS
+FROM DBA_TAB_COMMENTS
 where comments is not null and owner not in ('SYSTEM', 'SYS')
 """
 )
@@ -31,34 +31,40 @@ ORACLE_ALL_VIEW_DEFINITIONS = textwrap.dedent(
 SELECT
 LOWER(view_name) AS "view_name",
 LOWER(owner) AS "schema",
-DBMS_METADATA.GET_DDL('VIEW', view_name, owner) AS view_def
-FROM ALL_VIEWS
+text AS view_def
+FROM DBA_VIEWS
 WHERE owner NOT IN ('SYSTEM', 'SYS')
 UNION ALL
 SELECT
 LOWER(mview_name) AS "view_name",
 LOWER(owner) AS "schema",
-DBMS_METADATA.GET_DDL('MATERIALIZED_VIEW', mview_name, owner) AS view_def
-FROM ALL_MVIEWS
+query AS view_def
+FROM DBA_MVIEWS
 WHERE owner NOT IN ('SYSTEM', 'SYS')
+"""
+)
+
+GET_VIEW_NAMES = textwrap.dedent(
+    """
+SELECT view_name FROM DBA_VIEWS WHERE owner = :owner
 """
 )
 
 GET_MATERIALIZED_VIEW_NAMES = textwrap.dedent(
     """
-SELECT mview_name FROM ALL_MVIEWS WHERE owner = :owner
+SELECT mview_name FROM DBA_MVIEWS WHERE owner = :owner
 """
 )
 
 ORACLE_GET_TABLE_NAMES = textwrap.dedent(
     """
-SELECT table_name FROM ALL_TABLES WHERE 
+SELECT table_name FROM DBA_TABLES WHERE 
 {tablespace}
 OWNER = :owner  
 AND IOT_NAME IS NULL 
 AND DURATION IS NULL
 AND TABLE_NAME NOT IN 
-(SELECT mview_name FROM ALL_MVIEWS WHERE owner = :owner)
+(SELECT mview_name FROM DBA_MVIEWS WHERE owner = :owner)
 """
 )
 
@@ -67,7 +73,7 @@ ORACLE_IDENTITY_TYPE = textwrap.dedent(
 col.default_on_null,
 (
 	SELECT id.generation_type || ',' || id.IDENTITY_OPTIONS
-	FROM ALL_TAB_IDENTITY_COLS{dblink} id
+	FROM DBA_TAB_IDENTITY_COLS{dblink} id
 	WHERE col.table_name = id.table_name
 	AND col.column_name = id.column_name
 	AND col.owner = id.owner
@@ -81,14 +87,35 @@ SELECT
     OWNER,
     NAME,
     LINE,
-    TEXT
+    TEXT,
+    'StoredProcedure' as procedure_type
 FROM
-    ALL_SOURCE
+    DBA_SOURCE
 WHERE
     type = 'PROCEDURE' and owner = '{schema}'
 """
 )
-CHECK_ACCESS_TO_ALL = "SELECT table_name FROM ALL_TABLES where ROWNUM < 2"
+ORACLE_GET_SCHEMA = """
+    SELECT USERNAME AS SCHEMA_NAME 
+    FROM ALL_USERS 
+    WHERE ROWNUM = 1 
+    ORDER BY USERNAME
+"""
+ORACLE_GET_STORED_PACKAGES = textwrap.dedent(
+    """
+SELECT
+    OWNER,
+    NAME,
+    LINE,
+    TEXT,
+    'StoredPackage' as procedure_type
+
+FROM
+    DBA_SOURCE
+WHERE TYPE IN ('PACKAGE', 'PACKAGE BODY') AND owner = '{schema}'
+"""
+)
+CHECK_ACCESS_TO_ALL = "SELECT table_name FROM DBA_TABLES where ROWNUM < 2"
 ORACLE_GET_STORED_PROCEDURE_QUERIES = textwrap.dedent(
     """
 WITH SP_HISTORY AS (SELECT
@@ -153,13 +180,41 @@ ORACLE_GET_COLUMNS = textwrap.dedent(
             com.comments,
             col.virtual_column,
             {identity_cols}
-        FROM ALL_TAB_COLS{dblink} col
-        LEFT JOIN ALL_COL_COMMENTS{dblink} com
+        FROM DBA_TAB_COLS{dblink} col
+        LEFT JOIN DBA_COL_COMMENTS{dblink} com
         ON col.table_name = com.table_name
         AND col.column_name = com.column_name
         AND col.owner = com.owner
         WHERE col.table_name = CAST(:table_name AS VARCHAR2(128))
         AND col.hidden_column = 'NO'
+    """
+)
+
+ORACLE_ALL_CONSTRAINTS = textwrap.dedent(
+    """
+        SELECT
+            ac.constraint_name,
+            ac.constraint_type,
+            loc.column_name AS local_column,
+            rem.table_name AS remote_table,
+            rem.column_name AS remote_column,
+            rem.owner AS remote_owner,
+            loc.position as loc_pos,
+            rem.position as rem_pos,
+            ac.search_condition,
+            ac.delete_rule
+        FROM DBA_CONSTRAINTS{dblink} ac,
+            DBA_CONS_COLUMNS{dblink} loc,
+            DBA_CONS_COLUMNS{dblink} rem
+        WHERE ac.table_name = CAST(:table_name AS VARCHAR2(128))
+            AND ac.constraint_type IN ('R','P', 'U', 'C')
+            AND ac.owner = CAST(:owner AS VARCHAR2(128))
+            AND ac.owner = loc.owner
+            AND ac.constraint_name = loc.constraint_name
+            AND ac.r_owner = rem.owner(+)
+            AND ac.r_constraint_name = rem.constraint_name(+)
+            AND (rem.position IS NULL or loc.position=rem.position)
+        ORDER BY ac.constraint_name, loc.position
     """
 )
 

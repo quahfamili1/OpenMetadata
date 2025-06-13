@@ -10,6 +10,8 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+import { ItemType } from 'antd/lib/menu/hooks/useItems';
+
 import { ReactComponent as AppAnalyticsIcon } from '../../assets/svg/app-analytics.svg';
 import { ReactComponent as DataAssetsIcon } from '../../assets/svg/data-asset.svg';
 import { ReactComponent as KPIIcon } from '../../assets/svg/kpi.svg';
@@ -18,6 +20,7 @@ import DataAssetsTab from '../../components/DataInsight/DataAssetsTab/DataAssets
 import { DataInsightTabs } from '../../interface/data-insight.interface';
 import { getDataInsightPathWithFqn } from '../../utils/DataInsightUtils';
 import i18n from '../../utils/i18next/LocalUtil';
+import DataInsightLeftPanel from './DataInsightLeftPanel/DataInsightLeftPanel';
 import KPIList from './KPIList';
 
 type LeftSideBarType = {
@@ -28,6 +31,10 @@ type LeftSideBarType = {
 };
 
 class DataInsightClassBase {
+  public getLeftPanel() {
+    return DataInsightLeftPanel;
+  }
+
   public getLeftSideBar(): LeftSideBarType[] {
     return [
       {
@@ -75,6 +82,10 @@ class DataInsightClassBase {
         component: KPIList,
       },
     ];
+  }
+
+  public getManageExtraOptions(): ItemType[] {
+    return [];
   }
 }
 

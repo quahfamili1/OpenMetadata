@@ -12,11 +12,14 @@
  */
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 import { ReactComponent as NoDataIcon } from '../../../../../assets/svg/no-data-icon.svg';
+import documentationLinksClassBase from '../../../../../utils/DocumentationLinksClassBase';
 
 const NoProfilerBanner = () => {
   const { t } = useTranslation();
+  const profilerDocsLink =
+    documentationLinksClassBase.getDocsURLS()
+      .DATA_QUALITY_PROFILER_WORKFLOW_DOCS;
 
   return (
     <div
@@ -25,15 +28,14 @@ const NoProfilerBanner = () => {
       <NoDataIcon />
       <p className="m-l-xs" data-testid="error-msg">
         {t('message.no-profiler-message')}
-        <Link
+        <a
           data-testid="documentation-link"
+          href={profilerDocsLink}
+          rel="noreferrer"
           target="_blank"
-          to={{
-            pathname:
-              'https://docs.open-metadata.org/connectors/ingestion/workflows/profiler',
-          }}>
+          title="data quality observability profiler workflow">
           {`${t('label.here-lowercase')}.`}
-        </Link>
+        </a>
       </p>
     </div>
   );

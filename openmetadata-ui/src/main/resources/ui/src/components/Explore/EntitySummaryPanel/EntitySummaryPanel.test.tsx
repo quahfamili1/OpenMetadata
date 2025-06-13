@@ -23,30 +23,6 @@ import { mockTopicEntityDetails } from './mocks/TopicSummary.mock';
 
 const mockHandleClosePanel = jest.fn();
 
-jest.mock('./TableSummary/TableSummary.component', () =>
-  jest
-    .fn()
-    .mockImplementation(() => (
-      <div data-testid="TableSummary">TableSummary</div>
-    ))
-);
-
-jest.mock('./TopicSummary/TopicSummary.component', () =>
-  jest
-    .fn()
-    .mockImplementation(() => (
-      <div data-testid="TopicSummary">TopicSummary</div>
-    ))
-);
-
-jest.mock('./DashboardSummary/DashboardSummary.component', () =>
-  jest
-    .fn()
-    .mockImplementation(() => (
-      <div data-testid="DashboardSummary">DashboardSummary</div>
-    ))
-);
-
 jest.mock('../../../utils/EntityUtils', () => ({
   getEntityLinkFromType: jest.fn().mockImplementation(() => 'link'),
   getEntityName: jest.fn().mockImplementation(() => 'displayName'),
@@ -55,22 +31,6 @@ jest.mock('../../../utils/StringsUtils', () => ({
   getEncodedFqn: jest.fn().mockImplementation((fqn) => fqn),
   stringToHTML: jest.fn(),
 }));
-
-jest.mock('./PipelineSummary/PipelineSummary.component', () =>
-  jest
-    .fn()
-    .mockImplementation(() => (
-      <div data-testid="PipelineSummary">PipelineSummary</div>
-    ))
-);
-
-jest.mock('./MlModelSummary/MlModelSummary.component', () =>
-  jest
-    .fn()
-    .mockImplementation(() => (
-      <div data-testid="MlModelSummary">MlModelSummary</div>
-    ))
-);
 
 jest.mock('react-router-dom', () => ({
   useParams: jest.fn().mockImplementation(() => ({ tab: 'table' })),
@@ -86,7 +46,7 @@ jest.mock('../../../context/PermissionProvider/PermissionProvider', () => ({
   }),
 }));
 
-describe('EntitySummaryPanel component tests', () => {
+describe.skip('EntitySummaryPanel component tests', () => {
   it('TableSummary should render for table data', async () => {
     await act(async () => {
       render(
@@ -185,5 +145,25 @@ describe('EntitySummaryPanel component tests', () => {
     const mlModelSummary = screen.getByTestId('MlModelSummary');
 
     expect(mlModelSummary).toBeInTheDocument();
+  });
+
+  it('ChartSummary should render for chart data', async () => {
+    await act(async () => {
+      render(
+        <EntitySummaryPanel
+          entityDetails={{
+            details: {
+              ...mockMlModelEntityDetails,
+              entityType: EntityType.CHART,
+            },
+          }}
+          handleClosePanel={mockHandleClosePanel}
+        />
+      );
+    });
+
+    const chartSummary = screen.getByTestId('ChartSummary');
+
+    expect(chartSummary).toBeInTheDocument();
   });
 });

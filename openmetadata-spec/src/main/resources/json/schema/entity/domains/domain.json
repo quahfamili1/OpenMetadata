@@ -3,6 +3,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Domain",
   "description": "A `Domain` is a bounded context that is aligned with a Business Unit or a function within an organization.",
+  "$comment": "@om-entity-type",
   "type": "object",
   "javaType": "org.openmetadata.schema.entity.domains.Domain",
   "javaInterfaces": ["org.openmetadata.schema.EntityInterface"],
@@ -69,18 +70,42 @@
       "description" : "Children domains or sub-domains.",
       "$ref": "../../type/entityReferenceList.json"
     },
-    "owner": {
-      "description": "Owner of this Domain.",
-      "$ref": "../../type/entityReference.json"
+    "owners": {
+      "description": "Owners of this Domain.",
+      "$ref": "../../type/entityReferenceList.json"
     },
     "experts": {
       "description": "List of users who are experts in this Domain.",
       "$ref": "../../type/entityReferenceList.json",
       "default" : null
     },
+    "assets": {
+      "description": "Data assets collection that is part of this domain.",
+      "$ref" : "../../type/entityReferenceList.json"
+    },
+    "tags": {
+      "description": "Tags associated with the Domain.",
+      "type": "array",
+       "items": {
+        "$ref": "../../type/tagLabel.json"
+       },
+      "default": []
+    },
     "changeDescription": {
       "description": "Change that lead to this version of the entity.",
       "$ref": "../../type/entityHistory.json#/definitions/changeDescription"
+    },
+    "incrementalChangeDescription": {
+      "description": "Change that lead to this version of the entity.",
+      "$ref": "../../type/entityHistory.json#/definitions/changeDescription"
+    },
+    "extension": {
+      "description": "Entity extension data with custom attributes added to the entity.",
+      "$ref": "../../type/basic.json#/definitions/entityExtension"
+    },
+    "followers": {
+      "description": "Followers of this entity.",
+      "$ref": "../../type/entityReferenceList.json"
     }
   },
   "required": ["id", "name", "description", "domainType"],

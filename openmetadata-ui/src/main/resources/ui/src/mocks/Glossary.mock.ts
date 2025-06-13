@@ -15,12 +15,6 @@
 import { OperationPermission } from '../context/PermissionProvider/PermissionProvider.interface';
 import { ProviderType, Status } from '../generated/entity/data/glossaryTerm';
 
-export const mockedAssetData = {
-  currPage: 1,
-  data: [],
-  total: 0,
-};
-
 export const mockedGlossaryTerms = [
   {
     id: 'a5a97523-2229-41e5-abbe-65f61a534c34',
@@ -394,7 +388,7 @@ export const VERSION_VIEW_GLOSSARY_PERMISSION = {
   EditDescription: false,
   EditDisplayName: false,
   EditLineage: false,
-  EditOwner: false,
+  EditOwners: false,
   EditQueries: false,
   EditSampleData: false,
   EditTags: false,
@@ -417,7 +411,7 @@ export const MOCK_PERMISSIONS = {
   EditDescription: true,
   EditDisplayName: true,
   EditLineage: true,
-  EditOwner: true,
+  EditOwners: true,
   EditQueries: true,
   EditSampleData: true,
   EditTags: true,

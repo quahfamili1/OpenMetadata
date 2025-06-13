@@ -11,11 +11,20 @@
  *  limitations under the License.
  */
 
-import { PagingResponse } from 'Models';
-import { DataInsightChart } from '../generated/dataInsight/dataInsightChart';
+import { SystemChartType } from '../enums/DataInsight.enum';
 import { DataInsightChartResult } from '../generated/dataInsight/dataInsightChartResult';
 import { ChartAggregateParam } from '../interface/data-insight.interface';
 import APIClient from './index';
+
+export interface DataInsightCustomChartResult {
+  results: Array<{
+    count: number;
+    day: number;
+    group: string;
+    term: string;
+    metric?: string;
+  }>;
+}
 
 export const getAggregateChartData = async (params: ChartAggregateParam) => {
   const response = await APIClient.get<DataInsightChartResult>(
@@ -28,18 +37,32 @@ export const getAggregateChartData = async (params: ChartAggregateParam) => {
   return response.data;
 };
 
-export const getListDataInsightCharts = async () => {
-  const response = await APIClient.get<PagingResponse<DataInsightChart[]>>(
-    '/analytics/dataInsights/charts'
+export const getChartPreviewByName = async (
+  name: SystemChartType,
+  params: { start: number; end: number; filter?: string }
+) => {
+  const response = await APIClient.get<DataInsightCustomChartResult>(
+    `/analytics/dataInsights/system/charts/name/${name}/data`,
+    {
+      params,
+    }
   );
 
   return response.data;
 };
 
-export const getChartById = async (id: string) => {
-  const response = await APIClient.get<DataInsightChart>(
-    `/analytics/dataInsights/charts/${id}`
-  );
+export const getMultiChartsPreviewByName = async (
+  chartNames: SystemChartType[],
+  params: { start: number; end: number; filter?: string }
+) => {
+  const response = await APIClient.get<
+    Record<SystemChartType, DataInsightCustomChartResult>
+  >(`/analytics/dataInsights/system/charts/listChartData`, {
+    params: {
+      chartNames,
+      ...params,
+    },
+  });
 
   return response.data;
 };

@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -33,13 +33,13 @@ from metadata.generated.schema.entity.data.table import (
     ColumnProfile,
     ColumnProfilerConfig,
     SystemProfile,
-    TableData,
     TableProfile,
 )
 from metadata.generated.schema.settings.settings import Settings
 from metadata.generated.schema.tests.customMetric import (
     CustomMetric as CustomMetricEntity,
 )
+from metadata.generated.schema.type.basic import Timestamp
 from metadata.profiler.api.models import ProfilerResponse, ThreadPoolMetrics
 from metadata.profiler.interface.profiler_interface import ProfilerInterface
 from metadata.profiler.metrics.core import (
@@ -51,11 +51,9 @@ from metadata.profiler.metrics.core import (
     TMetric,
 )
 from metadata.profiler.metrics.static.row_count import RowCount
+from metadata.profiler.orm.functions.table_metric_computer import CREATE_DATETIME
 from metadata.profiler.orm.registry import NOT_COMPUTE
 from metadata.profiler.processor.metric_filter import MetricFilter
-from metadata.profiler.processor.sample_data_handler import upload_sample_data
-from metadata.utils.constants import SAMPLE_DATA_DEFAULT_COUNT
-from metadata.utils.execution_time_tracker import calculate_execution_time
 from metadata.utils.logger import profiler_logger
 
 logger = profiler_logger()
@@ -105,8 +103,7 @@ class Profiler(Generic[TMetric]):
         self.include_columns = include_columns
         self.exclude_columns = exclude_columns
         self._metrics = metrics
-        self._profile_date = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
-        self.profile_sample_config = self.profiler_interface.profile_sample_config
+        self._profile_ts = Timestamp(int(datetime.now().timestamp() * 1000))
 
         self.metric_filter = MetricFilter(
             metrics=self.metrics,
@@ -150,8 +147,8 @@ class Profiler(Generic[TMetric]):
         return self._get_included_columns()
 
     @property
-    def profile_date(self) -> datetime:
-        return self._profile_date
+    def profile_ts(self) -> Timestamp:
+        return self._profile_ts
 
     @property
     def columns(self) -> List[Column]:
@@ -168,6 +165,7 @@ class Profiler(Generic[TMetric]):
                 column
                 for column in self.profiler_interface.get_columns()
                 if column.name in self._get_included_columns()
+                or self._get_included_columns() == {"all"}
             ]
 
         if not self._get_included_columns():
@@ -218,7 +216,7 @@ class Profiler(Generic[TMetric]):
                     return
 
         raise RuntimeError(
-            f"No profile data computed for {self.profiler_interface.table_entity.fullyQualifiedName.__root__}"
+            f"No profile data computed for {self.profiler_interface.table_entity.fullyQualifiedName.root}"
         )
 
     def get_custom_metrics(
@@ -240,18 +238,13 @@ class Profiler(Generic[TMetric]):
             (
                 clmn
                 for clmn in self.profiler_interface.table_entity.columns
-                if clmn.name.__root__ == column_name
+                if clmn.name.root == column_name
             ),
             None,
         )
         if column:
             return column.customMetrics or None
         return None
-
-    @property
-    def sample(self):
-        """Return the sample used for the profiler"""
-        return self.profiler_interface.sample
 
     def validate_composed_metric(self) -> None:
         """
@@ -272,9 +265,6 @@ class Profiler(Generic[TMetric]):
 
         Data should be saved under self.results
         """
-
-        logger.debug("Running post Profiler...")
-
         current_col_results: Dict[str, Any] = self._column_results.get(col.name)
         if not current_col_results:
             logger.debug(
@@ -319,12 +309,15 @@ class Profiler(Generic[TMetric]):
                 col,
                 metric,
                 current_col_results,
-                table=self.table,
             )
 
     def _prepare_table_metrics(self) -> List:
         """prepare table metrics"""
         metrics = []
+
+        if self.source_config and not self.source_config.computeTableMetrics:
+            return metrics
+
         table_metrics = [
             metric
             for metric in self.metric_filter.static_metrics
@@ -379,6 +372,9 @@ class Profiler(Generic[TMetric]):
     def _prepare_column_metrics(self) -> List:
         """prepare column metrics"""
         column_metrics_for_thread_pool = []
+        if self.source_config and not self.source_config.computeColumnMetrics:
+            return column_metrics_for_thread_pool
+
         columns = [
             column
             for column in self.columns
@@ -486,14 +482,9 @@ class Profiler(Generic[TMetric]):
 
         if self.source_config.computeMetrics:
             logger.debug(
-                f"Computing profile metrics for {self.profiler_interface.table_entity.fullyQualifiedName.__root__}..."
+                f"Computing profile metrics for {self.profiler_interface.table_entity.fullyQualifiedName.root}..."
             )
             self.compute_metrics()
-
-        if self.source_config.generateSampleData:
-            sample_data = self.generate_sample_data()
-        else:
-            sample_data = None
 
         profile = self.get_profile()
         if self.source_config.computeMetrics:
@@ -502,39 +493,9 @@ class Profiler(Generic[TMetric]):
         table_profile = ProfilerResponse(
             table=self.profiler_interface.table_entity,
             profile=profile,
-            sample_data=sample_data,
         )
 
         return table_profile
-
-    @calculate_execution_time(store=False)
-    def generate_sample_data(self) -> Optional[TableData]:
-        """Fetch and ingest sample data
-
-        Returns:
-            TableData: sample data
-        """
-        try:
-            logger.debug(
-                "Fetching sample data for "
-                f"{self.profiler_interface.table_entity.fullyQualifiedName.__root__}..."  # type: ignore
-            )
-            table_data = self.profiler_interface.fetch_sample_data(
-                self.table, self.columns
-            )
-            upload_sample_data(
-                data=table_data, profiler_interface=self.profiler_interface
-            )
-            table_data.rows = table_data.rows[
-                : min(
-                    SAMPLE_DATA_DEFAULT_COUNT, self.profiler_interface.sample_data_count
-                )
-            ]
-            return table_data
-        except Exception as err:
-            logger.debug(traceback.format_exc())
-            logger.warning(f"Error fetching sample data: {err}")
-            return None
 
     def get_profile(self) -> CreateTableProfileRequest:
         """
@@ -568,31 +529,35 @@ class Profiler(Generic[TMetric]):
                     **self.column_results.get(
                         col.name
                         if not isinstance(col.name, ColumnName)
-                        else col.name.__root__
+                        else col.name.root
                     )
                 )
                 for col in self.columns
                 if self.column_results.get(
-                    col.name
-                    if not isinstance(col.name, ColumnName)
-                    else col.name.__root__
+                    col.name if not isinstance(col.name, ColumnName) else col.name.root
                 )
             ]
 
+            raw_create_date: Optional[datetime] = self._table_results.get(
+                CREATE_DATETIME
+            )
+            if raw_create_date:
+                raw_create_date = raw_create_date.replace(tzinfo=timezone.utc)
+
             table_profile = TableProfile(
-                timestamp=self.profile_date,
+                timestamp=self.profile_ts,
                 columnCount=self._table_results.get("columnCount"),
                 rowCount=self._table_results.get(RowCount.name()),
-                createDateTime=self._table_results.get("createDateTime"),
+                createDateTime=raw_create_date,
                 sizeInByte=self._table_results.get("sizeInBytes"),
                 profileSample=(
-                    self.profile_sample_config.profile_sample
-                    if self.profile_sample_config
+                    self.profiler_interface.sampler.sample_config.profileSample
+                    if self.profiler_interface.sampler.sample_config
                     else None
                 ),
                 profileSampleType=(
-                    self.profile_sample_config.profile_sample_type
-                    if self.profile_sample_config
+                    self.profiler_interface.sampler.sample_config.profileSampleType
+                    if self.profiler_interface.sampler.sample_config
                     else None
                 ),
                 customMetrics=self._table_results.get("customMetrics"),
@@ -600,7 +565,7 @@ class Profiler(Generic[TMetric]):
 
             if self._system_results:
                 system_profile = [
-                    SystemProfile(**system_result)
+                    SystemProfile.model_validate(system_result)
                     for system_result in self._system_results
                 ]
             else:

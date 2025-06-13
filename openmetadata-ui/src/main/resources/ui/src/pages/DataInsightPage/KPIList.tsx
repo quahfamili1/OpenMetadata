@@ -12,7 +12,7 @@
  */
 
 import Icon from '@ant-design/icons/lib/components/Icon';
-import { Button, Col, Tooltip, Typography } from 'antd';
+import { Button, Tooltip, Typography } from 'antd';
 import { ColumnsType } from 'antd/lib/table';
 import { isUndefined } from 'lodash';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -22,13 +22,11 @@ import { ReactComponent as EditIcon } from '../../assets/svg/edit-new.svg';
 import { ReactComponent as IconDelete } from '../../assets/svg/ic-delete.svg';
 import DeleteWidgetModal from '../../components/common/DeleteWidget/DeleteWidgetModal';
 import ErrorPlaceHolder from '../../components/common/ErrorWithPlaceholder/ErrorPlaceHolder';
-import NextPrevious from '../../components/common/NextPrevious/NextPrevious';
 import { PagingHandlerParams } from '../../components/common/NextPrevious/NextPrevious.interface';
-import RichTextEditorPreviewer from '../../components/common/RichTextEditor/RichTextEditorPreviewer';
+import RichTextEditorPreviewerNew from '../../components/common/RichTextEditor/RichTextEditorPreviewNew';
 import Table from '../../components/common/Table/Table';
 import { EmptyGraphPlaceholder } from '../../components/DataInsight/EmptyGraphPlaceholder';
 import {
-  getKpiPath,
   INITIAL_PAGING_VALUE,
   PAGE_SIZE_MEDIUM,
   pagingObject,
@@ -36,7 +34,7 @@ import {
 import { usePermissionProvider } from '../../context/PermissionProvider/PermissionProvider';
 import { ResourceEntity } from '../../context/PermissionProvider/PermissionProvider.interface';
 import { ERROR_PLACEHOLDER_TYPE } from '../../enums/common.enum';
-import { EntityType } from '../../enums/entity.enum';
+import { EntityType, TabSpecificField } from '../../enums/entity.enum';
 import { Kpi, KpiTargetType } from '../../generated/dataInsight/kpi/kpi';
 import { Operation } from '../../generated/entity/policies/policy';
 import { Paging } from '../../generated/type/paging';
@@ -45,6 +43,7 @@ import { getListKPIs } from '../../rest/KpiAPI';
 import { formatDateTime } from '../../utils/date-time/DateTimeUtils';
 import { getEntityName } from '../../utils/EntityUtils';
 import { checkPermission } from '../../utils/PermissionsUtils';
+import { getKpiPath } from '../../utils/RouterUtils';
 
 const KPIList = () => {
   const history = useHistory();
@@ -66,15 +65,20 @@ const KPIList = () => {
     try {
       setIsLoading(true);
       const response = await getListKPIs({
-        fields:
-          'startDate,endDate,targetDefinition,dataInsightChart,metricType',
+        fields: [
+          TabSpecificField.START_DATE,
+          TabSpecificField.END_DATE,
+          TabSpecificField.TARGET_VALUE,
+          TabSpecificField.DATA_INSIGHT_CHART,
+          TabSpecificField.METRIC_TYPE,
+        ],
         limit: PAGE_SIZE_MEDIUM,
         before: param && param.before,
         after: param && param.after,
       });
       setKpiList(response.data);
       setKpiPaging(response.paging);
-    } catch (err) {
+    } catch {
       setKpiList([]);
       setKpiPaging(pagingObject);
     } finally {
@@ -99,7 +103,7 @@ const KPIList = () => {
         width: 300,
         render: (description: string | undefined) =>
           description ? (
-            <RichTextEditorPreviewer markdown={description} />
+            <RichTextEditorPreviewerNew markdown={description} />
           ) : (
             <span data-testid="no-description">
               {t('label.no-entity', {
@@ -126,16 +130,12 @@ const KPIList = () => {
       },
       {
         title: t('label.target'),
-        dataIndex: 'targetDefinition',
-        key: 'targetDefinition',
-        render: (targetDefinition: Kpi['targetDefinition'], record: Kpi) => {
+        dataIndex: 'targetValue',
+        key: 'targetValue',
+        render: (value: Kpi['targetValue'], record: Kpi) => {
           const isPercentageMetric =
             record.metricType === KpiTargetType.Percentage;
-          const targetValue = targetDefinition?.length
-            ? isPercentageMetric
-              ? `${+targetDefinition[0].value * 100}%`
-              : targetDefinition[0].value
-            : '-';
+          const targetValue = isPercentageMetric ? `${+value}%` : value;
 
           return <Typography.Text>{targetValue}</Typography.Text>;
         },
@@ -223,38 +223,40 @@ const KPIList = () => {
       viewKPIPermission ? (
         <EmptyGraphPlaceholder />
       ) : (
-        <ErrorPlaceHolder type={ERROR_PLACEHOLDER_TYPE.PERMISSION} />
+        <ErrorPlaceHolder
+          className="border-none"
+          permissionValue={t('label.view-entity', {
+            entity: t('label.kpi-uppercase'),
+          })}
+          type={ERROR_PLACEHOLDER_TYPE.PERMISSION}
+        />
       ),
     [viewKPIPermission]
   );
 
   return (
     <>
-      <Col span={24}>
-        <Table
-          bordered
-          columns={columns}
-          data-testid="kpi-table"
-          dataSource={kpiList}
-          loading={isLoading}
-          locale={{
-            emptyText: noDataPlaceHolder,
-          }}
-          pagination={false}
-          rowKey="name"
-          size="small"
-        />
-      </Col>
-      {kpiList.length > PAGE_SIZE_MEDIUM && (
-        <Col span={24}>
-          <NextPrevious
-            currentPage={kpiPage}
-            pageSize={PAGE_SIZE_MEDIUM}
-            paging={kpiPaging}
-            pagingHandler={kpiPagingHandler}
-          />
-        </Col>
-      )}
+      <Table
+        columns={columns}
+        containerClassName="kpi-table"
+        customPaginationProps={{
+          currentPage: kpiPage,
+          isLoading,
+          showPagination: kpiList.length > PAGE_SIZE_MEDIUM,
+          pageSize: PAGE_SIZE_MEDIUM,
+          paging: kpiPaging,
+          pagingHandler: kpiPagingHandler,
+        }}
+        data-testid="kpi-table"
+        dataSource={kpiList}
+        loading={isLoading}
+        locale={{
+          emptyText: noDataPlaceHolder,
+        }}
+        pagination={false}
+        rowKey="name"
+        size="small"
+      />
 
       {selectedKpi && (
         <DeleteWidgetModal

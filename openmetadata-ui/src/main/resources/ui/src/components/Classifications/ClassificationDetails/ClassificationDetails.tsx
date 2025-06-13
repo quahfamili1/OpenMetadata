@@ -34,7 +34,7 @@ import { DE_ACTIVE_COLOR } from '../../../constants/constants';
 import { EntityField } from '../../../constants/Feeds.constants';
 import { usePermissionProvider } from '../../../context/PermissionProvider/PermissionProvider';
 import { ResourceEntity } from '../../../context/PermissionProvider/PermissionProvider.interface';
-import { EntityType } from '../../../enums/entity.enum';
+import { EntityType, TabSpecificField } from '../../../enums/entity.enum';
 import { ProviderType } from '../../../generated/api/classification/createClassification';
 import { ChangeDescription } from '../../../generated/entity/classification/classification';
 import { Tag } from '../../../generated/entity/classification/tag';
@@ -61,7 +61,6 @@ import AppBadge from '../../common/Badge/Badge.component';
 import DescriptionV1 from '../../common/EntityDescription/DescriptionV1';
 import ManageButton from '../../common/EntityPageInfos/ManageButton/ManageButton';
 import ErrorPlaceHolder from '../../common/ErrorWithPlaceholder/ErrorPlaceHolder';
-import NextPrevious from '../../common/NextPrevious/NextPrevious';
 import { NextPreviousProps } from '../../common/NextPrevious/NextPrevious.interface';
 import Table from '../../common/Table/Table';
 import EntityHeaderTitle from '../../Entity/EntityHeaderTitle/EntityHeaderTitle.component';
@@ -72,7 +71,6 @@ const ClassificationDetails = forwardRef(
     {
       currentClassification,
       handleAfterDeleteAction,
-      isEditClassification,
       classificationPermissions,
       handleUpdateClassification,
       handleEditTagClick,
@@ -80,10 +78,7 @@ const ClassificationDetails = forwardRef(
       isAddingTag,
       handleActionDeleteTag,
       handleAddNewTagClick,
-      handleEditDescriptionClick,
-      handleCancelEditDescription,
       disableEditButton,
-
       isVersionView = false,
     }: Readonly<ClassificationDetailsProps>,
     ref
@@ -113,7 +108,7 @@ const ClassificationDetails = forwardRef(
       setTags([]);
       try {
         const { data, paging: tagPaging } = await getTags({
-          fields: 'usageCount',
+          fields: TabSpecificField.USAGE_COUNT,
           parent: currentClassificationName,
           after: paging?.after,
           before: paging?.before,
@@ -194,7 +189,7 @@ const ClassificationDetails = forwardRef(
 
     const handleUpdateDisplayName = async (data: {
       name: string;
-      displayName: string;
+      displayName?: string;
     }) => {
       if (
         !isUndefined(currentClassification) &&
@@ -388,7 +383,7 @@ const ClassificationDetails = forwardRef(
     }));
 
     return (
-      <div className="p-x-md" data-testid="tags-container">
+      <div className="h-full overflow-y-auto" data-testid="tags-container">
         {currentClassification && (
           <Row data-testid="header" wrap={false}>
             <Col flex="auto">
@@ -420,10 +415,11 @@ const ClassificationDetails = forwardRef(
             </Col>
 
             <Col className="d-flex justify-end items-start" flex="270px">
-              <Space>
+              <Space size={12}>
                 {createPermission && (
                   <Tooltip title={addTagButtonToolTip}>
                     <Button
+                      className="h-10"
                       data-testid="add-new-tag-button"
                       disabled={isClassificationDisabled}
                       type="primary"
@@ -435,7 +431,7 @@ const ClassificationDetails = forwardRef(
                   </Tooltip>
                 )}
 
-                <ButtonGroup size="small">
+                <ButtonGroup className="spaced" size="small">
                   <Tooltip
                     title={t(
                       `label.${
@@ -459,10 +455,7 @@ const ClassificationDetails = forwardRef(
                       allowRename={!isSystemClassification}
                       allowSoftDelete={false}
                       canDelete={deletePermission && !isClassificationDisabled}
-                      displayName={
-                        currentClassification.displayName ??
-                        currentClassification.name
-                      }
+                      displayName={getEntityName(currentClassification)}
                       editDisplayNamePermission={
                         editDisplayNamePermission && !isClassificationDisabled
                       }
@@ -489,48 +482,41 @@ const ClassificationDetails = forwardRef(
             entityType={EntityType.CLASSIFICATION}
             hasEditAccess={editDescriptionPermission}
             isDescriptionExpanded={isEmpty(tags)}
-            isEdit={isEditClassification}
             showCommentsIcon={false}
-            onCancel={handleCancelEditDescription}
-            onDescriptionEdit={handleEditDescriptionClick}
             onDescriptionUpdate={handleUpdateDescription}
           />
         </div>
 
-        <Space className="w-full m-b-md" direction="vertical" size="large">
-          <Table
-            bordered
-            className={classNames({
-              'opacity-60': isClassificationDisabled,
-            })}
-            columns={tableColumn}
-            data-testid="table"
-            dataSource={tags}
-            loading={isTagsLoading}
-            locale={{
-              emptyText: (
-                <ErrorPlaceHolder
-                  className="m-y-md"
-                  placeholderText={t('message.no-tags-description')}
-                />
-              ),
-            }}
-            pagination={false}
-            rowClassName={(record) => (record.disabled ? 'opacity-60' : '')}
-            rowKey="id"
-            size="small"
-          />
-
-          {showPagination && !isTagsLoading && (
-            <NextPrevious
-              currentPage={currentPage}
-              pageSize={pageSize}
-              paging={paging}
-              pagingHandler={handleTagsPageChange}
-              onShowSizeChange={handlePageSizeChange}
-            />
-          )}
-        </Space>
+        <Table
+          className={classNames({
+            'opacity-60': isClassificationDisabled,
+          })}
+          columns={tableColumn}
+          customPaginationProps={{
+            currentPage,
+            isLoading: isTagsLoading,
+            pageSize,
+            paging,
+            showPagination,
+            pagingHandler: handleTagsPageChange,
+            onShowSizeChange: handlePageSizeChange,
+          }}
+          data-testid="table"
+          dataSource={tags}
+          loading={isTagsLoading}
+          locale={{
+            emptyText: (
+              <ErrorPlaceHolder
+                className="m-y-md"
+                placeholderText={t('message.no-tags-description')}
+              />
+            ),
+          }}
+          pagination={false}
+          rowClassName={(record) => (record.disabled ? 'opacity-60' : '')}
+          rowKey="id"
+          size="small"
+        />
       </div>
     );
   }

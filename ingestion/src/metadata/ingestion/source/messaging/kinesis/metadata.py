@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,7 +17,7 @@ from base64 import b64decode
 from typing import Iterable, List, Optional
 
 from metadata.generated.schema.api.data.createTopic import CreateTopicRequest
-from metadata.generated.schema.entity.data.topic import TopicSampleData
+from metadata.generated.schema.entity.data.topic import Topic, TopicSampleData
 from metadata.generated.schema.entity.services.connections.messaging.kinesisConnection import (
     KinesisConnection,
 )
@@ -27,7 +27,11 @@ from metadata.generated.schema.entity.services.ingestionPipelines.status import 
 from metadata.generated.schema.metadataIngestion.workflow import (
     Source as WorkflowSource,
 )
-from metadata.generated.schema.type.schema import Topic
+from metadata.generated.schema.type.basic import (
+    EntityName,
+    FullyQualifiedEntityName,
+    SourceUrl,
+)
 from metadata.ingestion.api.models import Either
 from metadata.ingestion.api.steps import InvalidSourceException
 from metadata.ingestion.models.ometa_topic_data import OMetaTopicSampleData
@@ -75,8 +79,8 @@ class KinesisSource(MessagingServiceSource):
     def create(
         cls, config_dict, metadata: OpenMetadata, pipeline_name: Optional[str] = None
     ):
-        config: WorkflowSource = WorkflowSource.parse_obj(config_dict)
-        connection: KinesisConnection = config.serviceConnection.__root__.config
+        config: WorkflowSource = WorkflowSource.model_validate(config_dict)
+        connection: KinesisConnection = config.serviceConnection.root.config
         if not isinstance(connection, KinesisConnection):
             raise InvalidSourceException(
                 f"Expected KinesisConnection, but got {connection}"
@@ -129,14 +133,14 @@ class KinesisSource(MessagingServiceSource):
             )
 
             topic = CreateTopicRequest(
-                name=topic_details.topic_name,
-                service=self.context.get().messaging_service,
+                name=EntityName(topic_details.topic_name),
+                service=FullyQualifiedEntityName(self.context.get().messaging_service),
                 partitions=len(topic_details.topic_metadata.partitions),
                 retentionTime=self._compute_retention_time(
                     topic_details.topic_metadata.summary
                 ),
                 maximumMessageSize=MAX_MESSAGE_SIZE,
-                sourceUrl=source_url,
+                sourceUrl=SourceUrl(source_url),
             )
             yield Either(right=topic)
             self.register_record(topic_request=topic)
@@ -181,6 +185,9 @@ class KinesisSource(MessagingServiceSource):
         try:
             while has_more_partitions:
                 partitions = self.kinesis.list_shards(**args.dict())
+                # Handle the case when NextToken is not present
+                if "NextToken" not in partitions:
+                    partitions["NextToken"] = None
                 kinesis_partitions_model = KinesisPartitions(**partitions)
                 all_partitions.extend(
                     [

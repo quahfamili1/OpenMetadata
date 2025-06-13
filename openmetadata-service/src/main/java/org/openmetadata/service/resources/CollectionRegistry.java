@@ -14,45 +14,47 @@
 package org.openmetadata.service.resources;
 
 import com.google.common.annotations.VisibleForTesting;
-import io.dropwizard.setup.Environment;
+import io.dropwizard.core.setup.Environment;
 import io.github.classgraph.ClassGraph;
 import io.github.classgraph.ClassInfo;
 import io.github.classgraph.ClassInfoList;
 import io.github.classgraph.ScanResult;
-import io.swagger.annotations.Api;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.ws.rs.Path;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import javax.ws.rs.Path;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.extern.slf4j.Slf4j;
 import org.jdbi.v3.core.Jdbi;
 import org.openmetadata.schema.Function;
 import org.openmetadata.schema.type.CollectionDescriptor;
 import org.openmetadata.schema.type.CollectionInfo;
 import org.openmetadata.service.OpenMetadataApplicationConfig;
+import org.openmetadata.service.limits.Limits;
 import org.openmetadata.service.security.Authorizer;
 import org.openmetadata.service.security.auth.AuthenticatorHandler;
 import org.openmetadata.service.util.ReflectionUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Collection registry is a registry of all the REST collections in the catalog. It is used for building REST endpoints
  * that anchor all the collections as follows: - .../api/v1 Provides information about all the collections in the
  * catalog - .../api/v1/collection-name provides sub collections or resources in that collection
  */
-@Slf4j
 public final class CollectionRegistry {
+  public static final List<String> PACKAGES = List.of("org.openmetadata", "io.collate");
   private static CollectionRegistry instance = null;
   private static volatile boolean initialized = false;
+  private static final Logger LOG = LoggerFactory.getLogger(CollectionRegistry.class);
 
   /** Map of collection endpoint path to collection details */
   private final Map<String, CollectionDetails> collectionMap = new LinkedHashMap<>();
@@ -88,10 +90,6 @@ public final class CollectionRegistry {
     }
   }
 
-  public Map<String, CollectionDetails> getCollectionMap() {
-    return Collections.unmodifiableMap(collectionMap);
-  }
-
   /**
    * REST collections are described using *CollectionDescriptor.json Load all CollectionDescriptors from these files in
    * the classpath
@@ -114,7 +112,8 @@ public final class CollectionRegistry {
    * those conditions and makes it available for listing them over API to author expressions in Rules.
    */
   private void loadConditionFunctions() {
-    try (ScanResult scanResult = new ClassGraph().enableAllInfo().scan()) {
+    try (ScanResult scanResult =
+        new ClassGraph().enableAllInfo().acceptPackages(PACKAGES.toArray(new String[0])).scan()) {
       for (ClassInfo classInfo : scanResult.getClassesWithMethodAnnotation(Function.class)) {
         List<Method> methods =
             ReflectionUtil.getMethodsAnnotatedWith(classInfo.loadClass(), Function.class);
@@ -152,19 +151,20 @@ public final class CollectionRegistry {
       Environment environment,
       OpenMetadataApplicationConfig config,
       Authorizer authorizer,
-      AuthenticatorHandler authenticatorHandler) {
+      AuthenticatorHandler authenticatorHandler,
+      Limits limits) {
     // Build list of ResourceDescriptors
     for (Map.Entry<String, CollectionDetails> e : collectionMap.entrySet()) {
       CollectionDetails details = e.getValue();
       String resourceClass = details.resourceClass;
       try {
         Object resource =
-            createResource(jdbi, resourceClass, config, authorizer, authenticatorHandler);
+            createResource(jdbi, resourceClass, config, authorizer, authenticatorHandler, limits);
         details.setResource(resource);
         environment.jersey().register(resource);
         LOG.info("Registering {} with order {}", resourceClass, details.order);
       } catch (Exception ex) {
-        LOG.warn("Failed to create resource for class {} {}", resourceClass, ex);
+        LOG.warn("Failed to create resource for class {} {}", resourceClass, ex.getMessage());
       }
     }
 
@@ -181,15 +181,15 @@ public final class CollectionRegistry {
       OpenMetadataApplicationConfig config,
       Authorizer authorizer,
       AuthenticatorHandler authenticatorHandler,
+      Limits limits,
       boolean isOperations) {
     // Build list of ResourceDescriptors
     for (Map.Entry<String, CollectionDetails> e : collectionMap.entrySet()) {
       CollectionDetails details = e.getValue();
-      if (!isOperations || (isOperations && details.requiredForOps)) {
+      if (!isOperations || details.requiredForOps) {
         String resourceClass = details.resourceClass;
         try {
-          Object resource =
-              createResource(jdbi, resourceClass, config, authorizer, authenticatorHandler);
+          createResource(jdbi, resourceClass, config, authorizer, authenticatorHandler, limits);
         } catch (Exception ex) {
           LOG.warn("Failed to create resource for class {} {}", resourceClass, ex);
         }
@@ -206,9 +206,9 @@ public final class CollectionRegistry {
       if (a instanceof Path path) {
         // Use @Path annotation to compile href
         collectionInfo.withHref(URI.create(path.value()));
-      } else if (a instanceof Api api) {
-        // Use @Api annotation to get documentation about the collection
-        collectionInfo.withDocumentation(api.value());
+      } else if (a instanceof Tag tag) {
+        // Use @Tag annotation to get documentation about the collection
+        collectionInfo.withDocumentation(tag.description());
       } else if (a instanceof Collection collection) {
         // Use @Collection annotation to get initialization information for the class
         collectionInfo.withName(collection.name());
@@ -223,7 +223,11 @@ public final class CollectionRegistry {
 
   /** Compile a list of REST collections based on Resource classes marked with {@code Collection} annotation */
   private static List<CollectionDetails> getCollections() {
-    try (ScanResult scanResult = new ClassGraph().enableAnnotationInfo().scan()) {
+    try (ScanResult scanResult =
+        new ClassGraph()
+            .enableAnnotationInfo()
+            .acceptPackages(PACKAGES.toArray(new String[0]))
+            .scan()) {
       ClassInfoList classList = scanResult.getClassesWithAnnotation(Collection.class);
       List<Class<?>> collectionClasses = classList.loadClasses();
       List<CollectionDetails> collections = new ArrayList<>();
@@ -241,7 +245,8 @@ public final class CollectionRegistry {
       String resourceClass,
       OpenMetadataApplicationConfig config,
       Authorizer authorizer,
-      AuthenticatorHandler authHandler)
+      AuthenticatorHandler authHandler,
+      Limits limits)
       throws ClassNotFoundException,
           NoSuchMethodException,
           IllegalAccessException,
@@ -253,19 +258,36 @@ public final class CollectionRegistry {
 
     // Create the resource identified by resourceClass
     try {
-      resource = clz.getDeclaredConstructor(Authorizer.class).newInstance(authorizer);
+      resource =
+          clz.getDeclaredConstructor(OpenMetadataApplicationConfig.class, Limits.class)
+              .newInstance(config, limits);
     } catch (NoSuchMethodException e) {
       try {
         resource =
-            clz.getDeclaredConstructor(Authorizer.class, AuthenticatorHandler.class)
-                .newInstance(authorizer, authHandler);
+            clz.getDeclaredConstructor(Authorizer.class, Limits.class)
+                .newInstance(authorizer, limits);
       } catch (NoSuchMethodException ex) {
         try {
-          resource =
-              clz.getDeclaredConstructor(Jdbi.class, Authorizer.class)
-                  .newInstance(jdbi, authorizer);
+          resource = clz.getDeclaredConstructor(Authorizer.class).newInstance(authorizer);
         } catch (NoSuchMethodException exe) {
-          resource = Class.forName(resourceClass).getConstructor().newInstance();
+          try {
+            resource =
+                clz.getDeclaredConstructor(
+                        Authorizer.class, Limits.class, AuthenticatorHandler.class)
+                    .newInstance(authorizer, limits, authHandler);
+          } catch (NoSuchMethodException exec) {
+            try {
+              resource =
+                  clz.getDeclaredConstructor(Jdbi.class, Authorizer.class)
+                      .newInstance(jdbi, authorizer);
+            } catch (NoSuchMethodException except) {
+              try {
+                resource = clz.getDeclaredConstructor(Limits.class).newInstance(limits);
+              } catch (NoSuchMethodException exception) {
+                resource = Class.forName(resourceClass).getConstructor().newInstance();
+              }
+            }
+          }
         }
       }
     } catch (Exception ex) {

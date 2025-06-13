@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,7 +14,7 @@ Models related to lineage parsing
 from enum import Enum
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Extra, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from metadata.generated.schema.entity.services.connections.database.athenaConnection import (
     AthenaType,
@@ -37,11 +37,17 @@ from metadata.generated.schema.entity.services.connections.database.db2Connectio
 from metadata.generated.schema.entity.services.connections.database.deltaLakeConnection import (
     DeltaLakeType,
 )
+from metadata.generated.schema.entity.services.connections.database.exasolConnection import (
+    ExasolType,
+)
 from metadata.generated.schema.entity.services.connections.database.hiveConnection import (
     HiveType,
 )
 from metadata.generated.schema.entity.services.connections.database.impalaConnection import (
     ImpalaType,
+)
+from metadata.generated.schema.entity.services.connections.database.mariaDBConnection import (
+    MariaDBType,
 )
 from metadata.generated.schema.entity.services.connections.database.mssqlConnection import (
     MssqlType,
@@ -58,11 +64,26 @@ from metadata.generated.schema.entity.services.connections.database.postgresConn
 from metadata.generated.schema.entity.services.connections.database.redshiftConnection import (
     RedshiftType,
 )
+from metadata.generated.schema.entity.services.connections.database.singleStoreConnection import (
+    SingleStoreType,
+)
 from metadata.generated.schema.entity.services.connections.database.snowflakeConnection import (
     SnowflakeType,
 )
 from metadata.generated.schema.entity.services.connections.database.sqliteConnection import (
     SQLiteType,
+)
+from metadata.generated.schema.entity.services.connections.database.teradataConnection import (
+    TeradataType,
+)
+from metadata.generated.schema.entity.services.connections.database.trinoConnection import (
+    TrinoType,
+)
+from metadata.generated.schema.entity.services.connections.database.unityCatalogConnection import (
+    DatabricksType as UnityCatalogType,
+)
+from metadata.generated.schema.entity.services.connections.database.verticaConnection import (
+    VerticaType,
 )
 from metadata.utils.singleton import Singleton
 
@@ -93,6 +114,9 @@ class Dialect(Enum):
     SQLITE = "sqlite"
     TERADATA = "teradata"
     TSQL = "tsql"
+    MARIADB = "mariadb"
+    TRINO = "trino"
+    VERTICA = "vertica"
 
 
 MAP_CONNECTION_TYPE_DIALECT: Dict[str, Dialect] = {
@@ -100,6 +124,7 @@ MAP_CONNECTION_TYPE_DIALECT: Dict[str, Dialect] = {
     str(BigqueryType.BigQuery.value): Dialect.BIGQUERY,
     str(ClickhouseType.Clickhouse.value): Dialect.CLICKHOUSE,
     str(DatabricksType.Databricks.value): Dialect.DATABRICKS,
+    str(UnityCatalogType.UnityCatalog.value): Dialect.DATABRICKS,
     str(Db2Type.Db2.value): Dialect.DB2,
     str(HiveType.Hive.value): Dialect.HIVE,
     str(ImpalaType.Impala.value): Dialect.IMPALA,
@@ -112,6 +137,12 @@ MAP_CONNECTION_TYPE_DIALECT: Dict[str, Dialect] = {
     str(SQLiteType.SQLite.value): Dialect.SQLITE,
     str(MssqlType.Mssql.value): Dialect.TSQL,
     str(AzureSQLType.AzureSQL.value): Dialect.TSQL,
+    str(TeradataType.Teradata.value): Dialect.TERADATA,
+    str(MariaDBType.MariaDB.value): Dialect.MARIADB,
+    str(SingleStoreType.SingleStore.value): Dialect.MYSQL,
+    str(ExasolType.Exasol.value): Dialect.EXASOL,
+    str(TrinoType.Trino.value): Dialect.TRINO,
+    str(VerticaType.Vertica.value): Dialect.VERTICA,
 }
 
 
@@ -140,11 +171,12 @@ class QueryParsingError(BaseModel):
         error (str): The error message of the failed query.
     """
 
-    class Config:
-        extra = Extra.forbid
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     query: str = Field(..., description="query text of the failed query")
-    error: Optional[str] = Field(..., description="error message of the failed query")
+    error: Optional[str] = Field(None, description="error message of the failed query")
 
 
 class QueryParsingFailures(metaclass=Singleton):

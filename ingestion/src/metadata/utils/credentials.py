@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -22,6 +22,7 @@ from google import auth
 from google.auth import impersonated_credentials
 
 from metadata.generated.schema.security.credentials.gcpCredentials import (
+    GcpADC,
     GCPCredentials,
     GcpCredentialsPath,
 )
@@ -89,7 +90,8 @@ def create_credential_tmp_file(credentials: dict) -> str:
 
 
 def build_google_credentials_dict(
-    gcp_values: Union[GcpCredentialsValues, GcpExternalAccount]
+    gcp_values: Union[GcpCredentialsValues, GcpExternalAccount],
+    single_project: bool = False,
 ) -> Dict[str, str]:
     """
     Given GcPCredentialsValues, build a dictionary as the JSON file
@@ -103,9 +105,18 @@ def build_google_credentials_dict(
         private_key_str = private_key_str.replace("\\n", "\n")
         validate_private_key(private_key_str)
 
+        if single_project:
+            project_id = (
+                gcp_values.projectId.root
+                if isinstance(gcp_values.projectId.root, str)
+                else gcp_values.projectId.root[0]
+            )
+        else:
+            project_id = gcp_values.projectId.root
+
         return {
             "type": gcp_values.type,
-            "project_id": gcp_values.projectId.__root__,
+            "project_id": project_id,
             "private_key_id": gcp_values.privateKeyId,
             "private_key": private_key_str,
             "client_email": gcp_values.clientEmail,
@@ -128,18 +139,29 @@ def build_google_credentials_dict(
     )
 
 
-def set_google_credentials(gcp_credentials: GCPCredentials) -> None:
+def set_google_credentials(
+    gcp_credentials: GCPCredentials, single_project: bool = False
+) -> None:
     """
     Set GCP credentials environment variable
     :param gcp_credentials: GCPCredentials
     """
     if isinstance(gcp_credentials.gcpConfig, GcpCredentialsPath):
-        os.environ[GOOGLE_CREDENTIALS] = str(gcp_credentials.gcpConfig.__root__)
+        os.environ[GOOGLE_CREDENTIALS] = str(gcp_credentials.gcpConfig.path)
         return
 
-    if gcp_credentials.gcpConfig.projectId is None:
+    if (
+        isinstance(gcp_credentials.gcpConfig, GcpCredentialsValues)
+        and gcp_credentials.gcpConfig.projectId is None
+    ):
         logger.info(
             "No credentials available, using the current environment permissions authenticated via gcloud SDK."
+        )
+        return
+
+    if isinstance(gcp_credentials.gcpConfig, GcpExternalAccount):
+        logger.info(
+            "Using External account credentials to authenticate with GCP services."
         )
         return
 
@@ -153,9 +175,17 @@ def set_google_credentials(gcp_credentials: GCPCredentials) -> None:
             )
             return
 
-        credentials_dict = build_google_credentials_dict(gcp_credentials.gcpConfig)
+        credentials_dict = build_google_credentials_dict(
+            gcp_credentials.gcpConfig, single_project
+        )
         tmp_credentials_file = create_credential_tmp_file(credentials=credentials_dict)
         os.environ[GOOGLE_CREDENTIALS] = tmp_credentials_file
+        return
+
+    if isinstance(gcp_credentials.gcpConfig, GcpADC):
+        logger.info(
+            "Using Application Default Credentials to authenticate with GCP services."
+        )
         return
 
     raise InvalidGcpConfigException(

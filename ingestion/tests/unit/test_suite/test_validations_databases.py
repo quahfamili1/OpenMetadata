@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -19,7 +19,6 @@ from unittest.mock import patch
 
 import pytest
 
-from metadata.data_quality.validations.validator import Validator
 from metadata.generated.schema.tests.basic import TestCaseResult, TestCaseStatus
 from metadata.utils.importer import import_test_case_class
 
@@ -304,13 +303,22 @@ EXECUTION_DATE = datetime.strptime("2021-07-03", "%Y-%m-%d")
             "test_case_table_column_count_to_be_between",
             "tableColumnCountToBeBetween",
             "TABLE",
-            (TestCaseResult, "7", None, TestCaseStatus.Success, None, None, None, None),
+            (
+                TestCaseResult,
+                "10",
+                None,
+                TestCaseStatus.Success,
+                None,
+                None,
+                None,
+                None,
+            ),
         ),
         (
             "test_case_table_column_count_to_equal",
             "tableColumnCountToEqual",
             "TABLE",
-            (TestCaseResult, "7", None, TestCaseStatus.Failed, None, None, None, None),
+            (TestCaseResult, "10", None, TestCaseStatus.Failed, None, None, None, None),
         ),
         (
             "test_case_table_column_name_to_exist",
@@ -408,6 +416,21 @@ EXECUTION_DATE = datetime.strptime("2021-07-03", "%Y-%m-%d")
                 None,
             ),
         ),
+        (
+            "test_case_column_values_to_be_at_expected_location",
+            "columnValuesToBeAtExpectedLocation",
+            "COLUMN",
+            (
+                TestCaseResult,
+                "30",
+                "0",
+                TestCaseStatus.Success,
+                None,
+                None,
+                None,
+                None,
+            ),
+        ),
     ],
 )
 def test_suite_validation_database(
@@ -448,8 +471,7 @@ def test_suite_validation_database(
                 execution_date=EXECUTION_DATE.timestamp(),
             )
 
-            validator = Validator(test_handler)
-            res = validator.validate()
+            res = test_handler.run_validation()
     elif test_case_name == "test_case_column_values_to_be_between_datetime":
         with patch(
             "metadata.data_quality.validations.column.sqlalchemy.columnValuesToBeBetween.ColumnValuesToBeBetweenValidator._run_results",
@@ -467,8 +489,7 @@ def test_suite_validation_database(
                 execution_date=EXECUTION_DATE.timestamp(),
             )
 
-            validator = Validator(test_handler)
-            res = validator.validate()
+            res = test_handler.run_validation()
     else:
         test_handler_obj = import_test_case_class(
             test_type,
@@ -482,8 +503,7 @@ def test_suite_validation_database(
             execution_date=EXECUTION_DATE.timestamp(),
         )
 
-        validator = Validator(test_handler)
-        res = validator.validate()
+        res = test_handler.run_validation()
 
     assert isinstance(res, type_)
     if val_1:

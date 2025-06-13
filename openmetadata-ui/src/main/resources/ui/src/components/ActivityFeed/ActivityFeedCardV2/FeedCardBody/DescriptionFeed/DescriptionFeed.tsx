@@ -14,24 +14,21 @@
 import { Col, Row } from 'antd';
 import React, { useMemo } from 'react';
 import { EntityField } from '../../../../../constants/Feeds.constants';
-import { getTextDiff } from '../../../../../utils/EntityVersionUtils';
 import {
   getFeedChangeFieldLabel,
   getFieldOperationIcon,
   getFrontEndFormat,
 } from '../../../../../utils/FeedUtils';
-import RichTextEditorPreviewer from '../../../../common/RichTextEditor/RichTextEditorPreviewer';
+import RichTextEditorPreviewerV1 from '../../../../common/RichTextEditor/RichTextEditorPreviewerV1';
 import { DescriptionFeedProps } from './DescriptionFeed.interface';
 
 function DescriptionFeed({ feed }: Readonly<DescriptionFeedProps>) {
   const { message, fieldOperation } = useMemo(() => {
-    const diffText = getTextDiff(
-      feed.feedInfo?.entitySpecificInfo?.previousDescription ?? '',
-      feed.feedInfo?.entitySpecificInfo?.newDescription ?? ''
-    );
-
     return {
-      message: diffText,
+      message: (feed.feedInfo?.entitySpecificInfo?.diffMessage ?? '')
+        .split(':')
+        .slice(1)
+        .join(':'),
       fieldOperation: feed.fieldOperation,
       fieldChanged: getFeedChangeFieldLabel(
         feed.feedInfo?.fieldName as EntityField
@@ -48,7 +45,7 @@ function DescriptionFeed({ feed }: Readonly<DescriptionFeedProps>) {
     <Row gutter={[12, 12]} wrap={false}>
       <Col className="h-4">{operationIcon}</Col>
       <Col>
-        <RichTextEditorPreviewer
+        <RichTextEditorPreviewerV1
           className="text-wrap"
           markdown={getFrontEndFormat(message)}
         />

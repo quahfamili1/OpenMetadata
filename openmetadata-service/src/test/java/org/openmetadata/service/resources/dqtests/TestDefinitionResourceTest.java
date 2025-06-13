@@ -1,6 +1,6 @@
 package org.openmetadata.service.resources.dqtests;
 
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.openmetadata.service.util.TestUtils.ADMIN_AUTH_HEADERS;
 import static org.openmetadata.service.util.TestUtils.assertListNotNull;
@@ -21,6 +21,7 @@ import org.openmetadata.schema.api.tests.CreateTestDefinition;
 import org.openmetadata.schema.tests.TestCaseParameter;
 import org.openmetadata.schema.tests.TestDefinition;
 import org.openmetadata.schema.tests.TestPlatform;
+import org.openmetadata.schema.type.ColumnDataType;
 import org.openmetadata.schema.type.TestDefinitionEntityType;
 import org.openmetadata.service.Entity;
 import org.openmetadata.service.resources.EntityResourceTest;
@@ -42,13 +43,23 @@ public class TestDefinitionResourceTest
     TestDefinitionResourceTest testDefinitionResourceTest = new TestDefinitionResourceTest();
     TEST_DEFINITION1 =
         testDefinitionResourceTest.getEntityByName(
-            "columnValueLengthsToBeBetween", "owner", ADMIN_AUTH_HEADERS);
+            "columnValueLengthsToBeBetween", "owners", ADMIN_AUTH_HEADERS);
     TEST_DEFINITION2 =
         testDefinitionResourceTest.getEntityByName(
-            "columnValuesToBeNotNull", "owner", ADMIN_AUTH_HEADERS);
+            "columnValuesToBeNotNull", "owners", ADMIN_AUTH_HEADERS);
     TEST_DEFINITION3 =
         testDefinitionResourceTest.getEntityByName(
-            "columnValuesMissingCount", "owner", ADMIN_AUTH_HEADERS);
+            "columnValuesMissingCount", "owners", ADMIN_AUTH_HEADERS);
+  }
+
+  @Test
+  void list_testDefinitionsForBoolType(TestInfo test) throws HttpResponseException {
+    Map<String, String> params = Map.of("supportedDataType", "BOOLEAN");
+    ResultList<TestDefinition> testDefinitions = listEntities(params, ADMIN_AUTH_HEADERS);
+    boolean b =
+        testDefinitions.getData().stream()
+            .allMatch(t -> t.getSupportedDataTypes().contains(ColumnDataType.BOOLEAN));
+    Assertions.assertTrue(b);
   }
 
   @Test
@@ -63,7 +74,7 @@ public class TestDefinitionResourceTest
     assertResponse(
         () -> createEntity(createRequest(test).withName(null), ADMIN_AUTH_HEADERS),
         BAD_REQUEST,
-        "[name must not be null]");
+        "[query param name must not be null]");
   }
 
   @Test
@@ -99,7 +110,9 @@ public class TestDefinitionResourceTest
     // Create an entity with mandatory name field null
     final CreateTestDefinition request = createRequest(null, "description", "displayName", null);
     assertResponseContains(
-        () -> createEntity(request, ADMIN_AUTH_HEADERS), BAD_REQUEST, "[name must not be null]");
+        () -> createEntity(request, ADMIN_AUTH_HEADERS),
+        BAD_REQUEST,
+        "[query param name must not be null]");
 
     // Create an entity with mandatory name field empty
     final CreateTestDefinition request1 = createRequest("", "description", "displayName", null);
@@ -148,13 +161,13 @@ public class TestDefinitionResourceTest
         byName
             ? getEntityByName(entity.getFullyQualifiedName(), fields, ADMIN_AUTH_HEADERS)
             : getEntity(entity.getId(), null, ADMIN_AUTH_HEADERS);
-    assertListNull(entity.getOwner());
-    fields = "owner";
+    assertListNull(entity.getOwners());
+    fields = "owners";
     entity =
         byName
             ? getEntityByName(entity.getFullyQualifiedName(), fields, ADMIN_AUTH_HEADERS)
             : getEntity(entity.getId(), fields, ADMIN_AUTH_HEADERS);
-    assertListNotNull(entity.getOwner());
+    assertListNotNull(entity.getOwners());
     return entity;
   }
 

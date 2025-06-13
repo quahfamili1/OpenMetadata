@@ -15,6 +15,7 @@ import { Alert, TreeSelect } from 'antd';
 import { BaseOptionType } from 'antd/lib/select';
 import { AxiosError } from 'axios';
 import { t } from 'i18next';
+import { isEmpty } from 'lodash';
 import React, { useEffect, useMemo, useState } from 'react';
 import { TeamHierarchy } from '../../../../generated/entity/teams/teamHierarchy';
 import { EntityReference } from '../../../../generated/entity/type';
@@ -54,9 +55,15 @@ const TeamsSelectable = ({
   const loadOptions = async () => {
     try {
       setIsLoading(true);
-      const res = await getTeamsHierarchy(filterJoinable);
-      setTeams(res.data);
-      showTeamsAlert && setNoTeam(teams.length === 0);
+      const { data } = await getTeamsHierarchy(filterJoinable);
+      const sortedData = [...data].sort((a, b) => {
+        const nameA = a.fullyQualifiedName ?? '';
+        const nameB = b.fullyQualifiedName ?? '';
+
+        return nameA.localeCompare(nameB);
+      });
+      setTeams(sortedData);
+      showTeamsAlert && setNoTeam(isEmpty(data));
     } catch (error) {
       showErrorToast(error as AxiosError);
     } finally {
@@ -109,6 +116,7 @@ const TeamsSelectable = ({
         treeDefaultExpandAll
         data-testid="team-select"
         dropdownStyle={{ maxHeight: 300, overflow: 'auto' }}
+        getPopupContainer={(triggerNode) => triggerNode.parentElement}
         loading={isLoading}
         maxTagCount={maxValueCount}
         placeholder={placeholder}

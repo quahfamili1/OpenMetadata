@@ -15,7 +15,6 @@ import { HTMLAttributes } from 'react';
 import { ThreadType } from '../../../generated/api/feed/createThread';
 import { Thread } from '../../../generated/entity/feed/thread';
 import { ThreadUpdatedFunc } from '../../../interface/feed.interface';
-import { ConfirmState } from '../ActivityFeedCard/ActivityFeedCard.interface';
 
 export interface ActivityFeedPanelProp extends HTMLAttributes<HTMLDivElement> {
   selectedThread: Thread;
@@ -38,14 +37,5 @@ export interface FeedPanelHeaderProp
   threadType?: ThreadType;
   onShowNewConversation?: (v: boolean) => void;
   hideCloseIcon?: boolean;
-}
-export interface FeedPanelOverlayProp
-  extends HTMLAttributes<HTMLButtonElement>,
-    Pick<ActivityFeedPanelProp, 'onCancel'> {}
-export interface FeedPanelBodyProp
-  extends HTMLAttributes<HTMLDivElement>,
-    Pick<ActivityFeedPanelProp, 'deletePostHandler' | 'updateThreadHandler'> {
-  threadData: Thread;
-  isLoading: boolean;
-  onConfirmation?: (data: ConfirmState) => void;
+  feed?: Thread;
 }

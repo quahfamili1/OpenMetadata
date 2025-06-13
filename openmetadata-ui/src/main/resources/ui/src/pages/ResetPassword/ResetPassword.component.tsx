@@ -16,12 +16,16 @@ import { AxiosError } from 'axios';
 import QueryString from 'qs';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useHistory, useLocation } from 'react-router-dom';
+import { useHistory } from 'react-router-dom';
+import AlertBar from '../../components/AlertBar/AlertBar';
 import { useBasicAuth } from '../../components/Auth/AuthProviders/BasicAuthProvider';
 import BrandImage from '../../components/common/BrandImage/BrandImage';
+import DocumentTitle from '../../components/common/DocumentTitle/DocumentTitle';
 import { ROUTES, VALIDATION_MESSAGES } from '../../constants/constants';
 import { passwordRegex } from '../../constants/regex.constants';
 import { PasswordResetRequest } from '../../generated/auth/passwordResetRequest';
+import { useAlertStore } from '../../hooks/useAlertStore';
+import useCustomLocation from '../../hooks/useCustomLocation/useCustomLocation';
 import { showErrorToast } from '../../utils/ToastUtils';
 import './reset-password.style.less';
 
@@ -33,7 +37,8 @@ interface ResetFormData {
 const ResetPassword = () => {
   const { t } = useTranslation();
   const [form] = Form.useForm();
-  const location = useLocation();
+  const location = useCustomLocation();
+  const { alert } = useAlertStore();
 
   const { handleResetPassword } = useBasicAuth();
 
@@ -68,6 +73,7 @@ const ResetPassword = () => {
 
   return (
     <div className="h-full p-y-36" data-testid="reset-password-container">
+      <DocumentTitle title={t('label.reset-your-password')} />
       <Card
         bodyStyle={{ padding: '48px' }}
         className="m-auto p-x-lg"
@@ -82,6 +88,16 @@ const ResetPassword = () => {
               {t('label.reset-your-password')}
             </Typography.Text>
           </Col>
+
+          {alert && (
+            <Col className="m-b-lg" span={24}>
+              <AlertBar
+                defafultExpand
+                message={alert?.message}
+                type={alert?.type}
+              />
+            </Col>
+          )}
 
           <Col span={24}>
             <Form

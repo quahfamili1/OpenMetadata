@@ -12,13 +12,29 @@
  */
 
 import { FC } from 'react';
+import { AppType } from '../../../../generated/entity/applications/app';
+import { getScheduleOptionsFromSchedules } from '../../../../utils/SchedularUtils';
 
 class ApplicationsClassBase {
   public importSchema(fqn: string) {
     return import(`../../../../utils/ApplicationSchemas/${fqn}.json`);
   }
   public getJSONUISchema() {
-    return {};
+    return {
+      moduleConfiguration: {
+        dataAssets: {
+          serviceFilter: {
+            'ui:widget': 'hidden',
+          },
+        },
+      },
+      entityLink: {
+        'ui:widget': 'hidden',
+      },
+      type: {
+        'ui:widget': 'hidden',
+      },
+    };
   }
   public importAppLogo(appName: string) {
     return import(`../../../../assets/svg/${appName}.svg`);
@@ -32,8 +48,28 @@ class ApplicationsClassBase {
     return null;
   }
 
+  public getFloatingApplicationEntityList(): string[] {
+    return [];
+  }
+
   public importAppScreenshot(screenshotName: string) {
     return import(`../../../../assets/img/appScreenshots/${screenshotName}`);
+  }
+
+  public getScheduleOptionsForApp(
+    app: string,
+    appType: AppType,
+    pipelineSchedules?: string[]
+  ) {
+    if (app === 'DataInsightsReportApplication') {
+      return ['week'];
+    } else if (appType === AppType.External) {
+      return ['day'];
+    }
+
+    return pipelineSchedules
+      ? getScheduleOptionsFromSchedules(pipelineSchedules)
+      : undefined;
   }
 }
 

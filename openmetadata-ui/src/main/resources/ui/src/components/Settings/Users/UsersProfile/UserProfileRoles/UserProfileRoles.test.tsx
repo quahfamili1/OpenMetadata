@@ -14,6 +14,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { useAuth } from '../../../../../hooks/authHooks';
+import { MOCK_USER_ROLE } from '../../../../../mocks/User.mock';
 import { getRoles } from '../../../../../rest/rolesAPIV1';
 import { mockUserRole } from '../../mocks/User.mocks';
 import UserProfileRoles from './UserProfileRoles.component';
@@ -21,6 +22,7 @@ import { UserProfileRolesProps } from './UserProfileRoles.interface';
 
 const mockPropsData: UserProfileRolesProps = {
   userRoles: [],
+  isDeletedUser: false,
   updateUserDetails: jest.fn(),
 };
 
@@ -29,11 +31,15 @@ jest.mock('../../../../../hooks/authHooks', () => ({
 }));
 
 jest.mock('../../../../common/InlineEdit/InlineEdit.component', () => {
-  return jest.fn().mockImplementation(({ onSave }) => (
+  return jest.fn().mockImplementation(({ children, onCancel, onSave }) => (
     <div data-testid="inline-edit">
       <span>InlineEdit</span>
+      {children}
       <button data-testid="save" onClick={onSave}>
         save
+      </button>
+      <button data-testid="cancel" onClick={onCancel}>
+        cancel
       </button>
     </div>
   ));
@@ -67,11 +73,19 @@ describe('Test User Profile Roles Component', () => {
 
     expect(screen.getByTestId('user-profile-roles')).toBeInTheDocument();
 
-    expect(await screen.findAllByText('Chip')).toHaveLength(1);
+    expect(await screen.findAllByText('Chip')).toHaveLength(2);
   });
 
   it('should not render roles edit button if non admin user', async () => {
     render(<UserProfileRoles {...mockPropsData} />);
+
+    expect(screen.getByTestId('user-profile-roles')).toBeInTheDocument();
+
+    expect(screen.queryByTestId('edit-roles-button')).not.toBeInTheDocument();
+  });
+
+  it('should not render roles edit button if user is deleted', async () => {
+    render(<UserProfileRoles {...mockPropsData} isDeletedUser />);
 
     expect(screen.getByTestId('user-profile-roles')).toBeInTheDocument();
 
@@ -90,7 +104,7 @@ describe('Test User Profile Roles Component', () => {
     expect(screen.getByTestId('edit-roles-button')).toBeInTheDocument();
   });
 
-  it('should render select field on edit button action', async () => {
+  it('should render edit popover on edit button action', async () => {
     (useAuth as jest.Mock).mockImplementation(() => ({
       isAdminUser: true,
     }));
@@ -105,7 +119,7 @@ describe('Test User Profile Roles Component', () => {
 
     fireEvent.click(editButton);
 
-    expect(screen.getByText('InlineEdit')).toBeInTheDocument();
+    expect(screen.getByTestId('user-profile-edit-popover')).toBeInTheDocument();
   });
 
   it('should call updateUserDetails on click save', async () => {
@@ -116,10 +130,12 @@ describe('Test User Profile Roles Component', () => {
 
     fireEvent.click(screen.getByTestId('edit-roles-button'));
 
-    expect(screen.getByText('InlineEdit')).toBeInTheDocument();
+    expect(screen.getByTestId('user-profile-edit-popover')).toBeInTheDocument();
 
     act(() => {
-      fireEvent.click(screen.getByTestId('save'));
+      fireEvent.click(
+        screen.getByTestId('user-profile-edit-roles-save-button')
+      );
     });
 
     expect(mockPropsData.updateUserDetails).toHaveBeenCalledWith(
@@ -145,6 +161,32 @@ describe('Test User Profile Roles Component', () => {
 
     expect(getRoles).toHaveBeenCalledWith('', undefined, undefined, false, 50);
 
-    expect(screen.getByText('InlineEdit')).toBeInTheDocument();
+    expect(screen.getByTestId('user-profile-edit-popover')).toBeInTheDocument();
+  });
+
+  it('should maintain initial state if edit is close without save', async () => {
+    (useAuth as jest.Mock).mockImplementation(() => ({
+      isAdminUser: true,
+    }));
+
+    render(
+      <UserProfileRoles
+        {...mockPropsData}
+        userRoles={MOCK_USER_ROLE.slice(0, 2)}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId('edit-roles-button'));
+
+    const selectInput = screen.getByTestId('profile-edit-roles-select');
+    fireEvent.click(selectInput);
+    fireEvent.click(
+      screen.getByTestId('user-profile-edit-roles-cancel-button')
+    );
+
+    expect(screen.getByText('37a00e0b-383...')).toBeInTheDocument();
+    expect(screen.getByText('afc5583c-e26...')).toBeInTheDocument();
+
+    expect(screen.queryByText('admin')).not.toBeInTheDocument();
   });
 });

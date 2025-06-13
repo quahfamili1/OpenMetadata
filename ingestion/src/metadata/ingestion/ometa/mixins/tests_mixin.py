@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,9 +15,8 @@ To be used by OpenMetadata class
 """
 
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Optional, Type, Union
-from urllib.parse import quote
 from uuid import UUID
 
 from metadata.generated.schema.api.tests.createLogicalTestCases import (
@@ -45,9 +44,8 @@ from metadata.generated.schema.tests.testDefinition import (
 )
 from metadata.generated.schema.tests.testSuite import TestSuite
 from metadata.generated.schema.type.entityReference import EntityReference
-from metadata.ingestion.models.encoders import show_secrets_encoder
 from metadata.ingestion.ometa.client import REST
-from metadata.ingestion.ometa.utils import model_str
+from metadata.ingestion.ometa.utils import model_str, quote
 from metadata.utils.logger import ometa_logger
 
 logger = ometa_logger()
@@ -76,9 +74,9 @@ class OMetaTestsMixin:
         Returns:
             _type_: _description_
         """
-        resp = self.client.put(
-            f"{self.get_suffix(TestCase)}/{quote(test_case_fqn,safe='')}/testCaseResult",
-            test_results.json(),
+        resp = self.client.post(
+            f"{self.get_suffix(TestCaseResult)}/{quote(test_case_fqn)}",
+            test_results.model_dump_json(),
         )
 
         return resp
@@ -88,7 +86,7 @@ class OMetaTestsMixin:
         test_suite_name: str,
         test_suite_description: Optional[
             str
-        ] = f"Test Suite created on {datetime.now(timezone.utc).strftime('%Y-%m-%d')}",
+        ] = f"Test Suite created on {datetime.now().strftime('%Y-%m-%d')}",
     ) -> TestSuite:
         """Get or create a TestSuite
 
@@ -169,7 +167,6 @@ class OMetaTestsMixin:
         self,
         test_case_fqn: str,
         entity_link: Optional[str] = None,
-        test_suite_fqn: Optional[str] = None,
         test_definition_fqn: Optional[str] = None,
         test_case_parameter_values: Optional[List[TestCaseParameterValue]] = None,
     ):
@@ -198,7 +195,6 @@ class OMetaTestsMixin:
             CreateTestCaseRequest(
                 name=test_case_fqn.split(".")[-1],
                 entityLink=entity_link,
-                testSuite=test_suite_fqn,
                 testDefinition=test_definition_fqn,
                 parameterValues=test_case_parameter_values,
             )  # type: ignore
@@ -229,8 +225,8 @@ class OMetaTestsMixin:
             return table_entity.testSuite
 
         create_test_suite = CreateTestSuiteRequest(
-            name=f"{table_entity.fullyQualifiedName.__root__}.TestSuite",
-            executableEntityReference=table_entity.fullyQualifiedName.__root__,
+            name=f"{table_entity.fullyQualifiedName.root}.TestSuite",
+            basicEntityReference=table_entity.fullyQualifiedName.root,
         )  # type: ignore
         test_suite = self.create_or_update_executable_test_suite(create_test_suite)
         return test_suite
@@ -255,12 +251,12 @@ class OMetaTestsMixin:
         }
 
         resp = self.client.get(
-            f"/dataQuality/testCases/{test_case_fqn}/testCaseResult",
+            f"{self.get_suffix(TestCaseResult)}/{test_case_fqn}",
             params,
         )
 
         if resp:
-            return [TestCaseResult.parse_obj(entity) for entity in resp["data"]]
+            return [TestCaseResult.model_validate(entity) for entity in resp["data"]]
         return None
 
     def create_or_update_executable_test_suite(
@@ -277,9 +273,9 @@ class OMetaTestsMixin:
         entity = data.__class__
         entity_class = self.get_entity_from_create(entity)
         path = self.get_suffix(entity) + "/executable"
-        resp = self.client.put(path, data=data.json(encoder=show_secrets_encoder))
+        resp = self.client.put(path, data=data.model_dump_json())
 
-        return entity_class.parse_obj(resp)
+        return entity_class.model_validate(resp)
 
     def delete_executable_test_suite(
         self,
@@ -307,7 +303,7 @@ class OMetaTestsMixin:
             data (CreateLogicalTestCases): logical test cases
         """
         path = self.get_suffix(TestCase) + "/logicalTestCases"
-        self.client.put(path, data=data.json(encoder=show_secrets_encoder))
+        self.client.put(path, data=data.model_dump_json())
 
     def create_test_case_resolution(
         self, data: CreateTestCaseResolutionStatus
@@ -321,12 +317,15 @@ class OMetaTestsMixin:
             TestCaseResolutionStatus
         """
         path = self.get_suffix(TestCase) + "/testCaseIncidentStatus"
-        response = self.client.post(path, data=data.json(encoder=show_secrets_encoder))
+        response = self.client.post(path, data=data.model_dump_json())
 
         return TestCaseResolutionStatus(**response)
 
     def ingest_failed_rows_sample(
-        self, test_case: TestCase, failed_rows: TableData
+        self,
+        test_case: TestCase,
+        failed_rows: TableData,
+        validate=True,
     ) -> Optional[TableData]:
         """
         PUT sample failed data for a test case.
@@ -336,14 +335,15 @@ class OMetaTestsMixin:
         """
         resp = None
         try:
+            params = "" if validate else "validate=false"
             resp = self.client.put(
-                f"{self.get_suffix(TestCase)}/{test_case.id.__root__}/failedRowsSample",
-                data=failed_rows.json(),
+                f"{self.get_suffix(TestCase)}/{test_case.id.root}/failedRowsSample?{params}",
+                data=failed_rows.model_dump_json(),
             )
         except Exception as exc:
             logger.debug(traceback.format_exc())
             logger.warning(
-                f"Error trying to PUT sample data for {test_case.fullyQualifiedName.__root__}: {exc}"
+                f"Error trying to PUT sample data for {test_case.fullyQualifiedName.root}: {exc}"
             )
 
         if resp:
@@ -352,13 +352,13 @@ class OMetaTestsMixin:
             except UnicodeError as err:
                 logger.debug(traceback.format_exc())
                 logger.warning(
-                    f"Unicode Error parsing the sample data response from {test_case.fullyQualifiedName.__root__}: "
+                    f"Unicode Error parsing the sample data response from {test_case.fullyQualifiedName.root}: "
                     f"{err}"
                 )
             except Exception as exc:
                 logger.debug(traceback.format_exc())
                 logger.warning(
-                    f"Error trying to parse sample data results from {test_case.fullyQualifiedName.__root__}: {exc}"
+                    f"Error trying to parse sample data results from {test_case.fullyQualifiedName.root}: {exc}"
                 )
 
         return None
@@ -373,7 +373,7 @@ class OMetaTestsMixin:
         :param inspection_query: SQL query to inspect the failed rows
         """
         resp = self.client.put(
-            f"{self.get_suffix(TestCase)}/{test_case.id.__root__}/inspectionQuery",
+            f"{self.get_suffix(TestCase)}/{test_case.id.root}/inspectionQuery",
             data=inspection_query,
         )
         return TestCase(**resp)

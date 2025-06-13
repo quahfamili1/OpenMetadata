@@ -25,6 +25,10 @@ $$section
 
 URL of the Schema Registry used to ingest the schemas of the topics.
 
+If you encounter issues connecting to the Schema Registry, ensure that the protocol is explicitly specified in the Schema Registry URL. For example:
+- Use `http://localhost:8081` instead of `localhost:8081`.
+The Schema Registry requires a properly formatted URL, including the protocol (`http://` or `https://`). While this differentiation is expected in the Schema Registry configuration, it may not be immediately apparent.
+
 **NOTE**: For now, the schema will be the last version found for the schema name `{topic-name}-value`. An [issue](https://github.com/open-metadata/OpenMetadata/issues/10399) to improve how it currently works has been opened.
 $$
 
@@ -80,4 +84,25 @@ $$section
 ### Schema Registry Config $(id="schemaRegistryConfig")
 
 The accepted additional values for the Schema Registry configuration can be found in the following [link](https://docs.confluent.io/5.5.1/clients/confluent-kafka-python/index.html#confluent_kafka.schema_registry.SchemaRegistryClient).
+$$
+
+$$section
+### SSL Config $(id="sslConfig")
+
+Client SSL configuration in case we are connection to a host with SSL enabled.
+$$
+
+$$section
+### SSL CA $(id="caCertificate")
+The CA certificate used for SSL validation.
+$$
+
+$$section
+### SSL Certificate $(id="sslCertificate")
+The SSL certificate used for client authentication.
+$$
+
+$$section
+### SSL Key $(id="sslKey")
+The private key associated with the SSL certificate.
 $$

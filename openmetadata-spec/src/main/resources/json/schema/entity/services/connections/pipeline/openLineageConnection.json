@@ -73,7 +73,8 @@
       "type": "string",
       "enum": [
         "PLAINTEXT",
-        "SSL"
+        "SSL",
+        "SASL_SSL"
       ],
       "javaEnums": [
         {
@@ -81,6 +82,9 @@
         },
         {
           "name": "SSL"
+        },
+        {
+          "name": "SASL_SSL"
         }
       ]
     },
@@ -88,6 +92,16 @@
       "title": "SSL",
       "description": "SSL Configuration details.",
       "$ref": "../../../../security/ssl/verifySSLConfig.json#/definitions/sslConfig"
+    },
+    "saslConfig": {
+      "title": "SASL",
+      "description": "SASL Configuration details.",
+      "$ref": "../../../../security/sasl/saslClientConfig.json"
+    },
+    "pipelineFilterPattern": {
+      "description": "Regex exclude pipelines.",
+      "$ref": "../../../../type/filterPattern.json#/definitions/filterPattern",
+      "title": "Default Pipeline Filter Pattern"
     },
     "supportsMetadataExtraction": {
       "$ref": "../connectionBasicType.json#/definitions/supportsMetadataExtraction"

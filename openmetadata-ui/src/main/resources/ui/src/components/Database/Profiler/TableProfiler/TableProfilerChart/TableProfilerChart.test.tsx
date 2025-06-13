@@ -93,6 +93,23 @@ jest.mock('../CustomMetricGraphs/CustomMetricGraphs.component', () => {
   return jest.fn().mockImplementation(() => <div>CustomMetricGraphs</div>);
 });
 
+jest.mock('../../../../../hoc/LimitWrapper', () => {
+  return jest.fn().mockImplementation(({ children }) => <div>{children}</div>);
+});
+
+jest.mock('../../../../../utils/DocumentationLinksClassBase', () => {
+  return {
+    getDocsURLS: jest.fn().mockImplementation(() => ({
+      DATA_QUALITY_PROFILER_WORKFLOW_DOCS: 'test-docs-link',
+    })),
+  };
+});
+jest.mock('../../../../../utils/CommonUtils', () => ({
+  Transi18next: jest
+    .fn()
+    .mockImplementation(({ i18nKey }) => <div>{i18nKey}</div>),
+}));
+
 describe('TableProfilerChart component test', () => {
   it('Component should render', async () => {
     const mockGetSystemProfileList = getSystemProfileList as jest.Mock;

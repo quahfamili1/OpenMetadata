@@ -21,16 +21,37 @@ import {
 import { ExploreSearchIndex } from '../Explore/ExplorePage.interface';
 import ExploreV1 from './ExploreV1.component';
 
+jest.mock('../../hooks/useCustomLocation/useCustomLocation', () => {
+  return jest.fn().mockImplementation(() => ({ search: '' }));
+});
+
 jest.mock('react-router-dom', () => ({
   useHistory: jest.fn(),
-  useLocation: jest.fn().mockImplementation(() => ({ search: '' })),
   useParams: jest.fn().mockReturnValue({
     tab: 'tables',
   }),
 }));
 
-jest.mock('../../components/PageLayoutV1/PageLayoutV1', () => {
-  return jest.fn().mockImplementation(({ children }) => <div>{children}</div>);
+jest.mock('../Explore/ExploreTree/ExploreTree', () => {
+  return jest.fn().mockImplementation(() => <div>ExploreTree</div>);
+});
+
+jest.mock('../common/ResizablePanels/ResizablePanels', () => {
+  return jest.fn().mockImplementation(({ firstPanel, secondPanel }) => (
+    <div>
+      <div>{firstPanel.children}</div>
+      <div>{secondPanel.children}</div>
+    </div>
+  ));
+});
+
+jest.mock('../common/ResizablePanels/ResizableLeftPanels', () => {
+  return jest.fn().mockImplementation(({ firstPanel, secondPanel }) => (
+    <div>
+      <div>{firstPanel.children}</div>
+      <div>{secondPanel.children}</div>
+    </div>
+  ));
 });
 
 jest.mock('./ExploreSearchCard/ExploreSearchCard', () => {
@@ -114,24 +135,10 @@ const props = {
 };
 
 describe('ExploreV1', () => {
-  it('renders component without errors', () => {
+  it('renders component without errors', async () => {
     render(<ExploreV1 {...props} />);
 
-    expect(screen.getByTestId('explore-page')).toBeInTheDocument();
-    expect(screen.getByText('Tables')).toBeInTheDocument();
-    expect(screen.getByText('Stored Procedures')).toBeInTheDocument();
-    expect(screen.getByText('Databases')).toBeInTheDocument();
-    expect(screen.getByText('Database Schemas')).toBeInTheDocument();
-    expect(screen.getByText('Pipelines')).toBeInTheDocument();
-    expect(screen.getByText('Ml Models')).toBeInTheDocument();
-    expect(screen.getByText('Topics')).toBeInTheDocument();
-    expect(screen.getByText('Containers')).toBeInTheDocument();
-    expect(screen.getByText('Tags')).toBeInTheDocument();
-    expect(screen.getByText('Glossaries')).toBeInTheDocument();
-    expect(screen.getByText('Dashboards')).toBeInTheDocument();
-    expect(screen.getByText('Data Models')).toBeInTheDocument();
-    expect(screen.getByText('Search Indexes')).toBeInTheDocument();
-    expect(screen.getByText('Data Products')).toBeInTheDocument();
+    expect(screen.getByText('ExploreTree')).toBeInTheDocument();
   });
 
   it('changes sort order when sort button is clicked', () => {

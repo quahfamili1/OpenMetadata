@@ -16,8 +16,9 @@ package org.openmetadata.service.clients.pipeline;
 import java.lang.reflect.InvocationTargetException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.openmetadata.common.utils.CommonUtil;
 import org.openmetadata.schema.api.configuration.pipelineServiceClient.PipelineServiceClientConfiguration;
-import org.openmetadata.sdk.PipelineServiceClient;
+import org.openmetadata.sdk.PipelineServiceClientInterface;
 import org.openmetadata.sdk.exception.PipelineServiceClientException;
 
 @Slf4j
@@ -26,23 +27,29 @@ public final class PipelineServiceClientFactory {
     // Final class
   }
 
-  @Getter private static PipelineServiceClient pipelineServiceClient;
+  @Getter private static PipelineServiceClientInterface pipelineServiceClient;
 
-  public static PipelineServiceClient createPipelineServiceClient(
+  public static PipelineServiceClientInterface createPipelineServiceClient(
       PipelineServiceClientConfiguration config) {
-    if (pipelineServiceClient != null) {
+    if (pipelineServiceClient != null || CommonUtil.nullOrEmpty(config)) {
       return pipelineServiceClient;
+    }
+
+    if (Boolean.FALSE.equals(config.getEnabled())) {
+      LOG.debug("Pipeline Service Client is disabled. Skipping initialization.");
+      return null;
     }
 
     String pipelineServiceClientClass = config.getClassName();
     LOG.debug("Registering PipelineServiceClient: {}", pipelineServiceClientClass);
 
     try {
-      pipelineServiceClient =
+      PipelineServiceClientInterface client =
           Class.forName(pipelineServiceClientClass)
               .asSubclass(PipelineServiceClient.class)
               .getConstructor(PipelineServiceClientConfiguration.class)
               .newInstance(config);
+      pipelineServiceClient = new MeteredPipelineServiceClient(client);
       return pipelineServiceClient;
     } catch (ClassNotFoundException
         | NoSuchMethodException
@@ -51,7 +58,8 @@ public final class PipelineServiceClientFactory {
         | IllegalAccessException e) {
       throw new PipelineServiceClientException(
           String.format(
-              "Error trying to load PipelineServiceClient %s: %s", pipelineServiceClientClass, e));
+              "Error trying to load PipelineServiceClient %s: %s",
+              pipelineServiceClientClass, e.getCause()));
     }
   }
 }

@@ -14,21 +14,19 @@
 package org.openmetadata.service.socket;
 
 import com.auth0.jwt.interfaces.Claim;
-import com.auth0.jwt.interfaces.DecodedJWT;
 import io.socket.engineio.server.utils.ParseQS;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.util.Map;
-import java.util.TreeMap;
-import javax.servlet.Filter;
-import javax.servlet.FilterChain;
-import javax.servlet.FilterConfig;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.openmetadata.schema.api.security.AuthenticationConfiguration;
 import org.openmetadata.schema.api.security.AuthorizerConfiguration;
 import org.openmetadata.service.security.JwtFilter;
+import org.openmetadata.service.security.SecurityUtil;
 
 @Slf4j
 public class SocketAddressFilter implements Filter {
@@ -47,9 +45,6 @@ public class SocketAddressFilter implements Filter {
   public SocketAddressFilter() {
     enableSecureSocketConnection = false;
   }
-
-  @Override
-  public void destroy() {}
 
   @Override
   public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -77,16 +72,12 @@ public class SocketAddressFilter implements Filter {
     }
   }
 
-  @Override
-  public void init(FilterConfig filterConfig) {}
-
   public static void validatePrefixedTokenRequest(JwtFilter jwtFilter, String prefixedToken) {
     String token = JwtFilter.extractToken(prefixedToken);
-    // validate token
-    DecodedJWT jwt = jwtFilter.validateAndReturnDecodedJwtToken(token);
-    // validate Domain and Username
-    Map<String, Claim> claims = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-    claims.putAll(jwt.getClaims());
-    jwtFilter.validateAndReturnUsername(claims);
+    Map<String, Claim> claims = jwtFilter.validateJwtAndGetClaims(token);
+    String userName =
+        SecurityUtil.findUserNameFromClaims(
+            jwtFilter.getJwtPrincipalClaimsMapping(), jwtFilter.getJwtPrincipalClaims(), claims);
+    jwtFilter.checkValidationsForToken(claims, token, userName);
   }
 }

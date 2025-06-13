@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -27,12 +27,12 @@ class InvalidPatternException(Exception):
     """
 
 
-def validate_regex(regex_list: List[str]) -> None:
+def validate_regex(regex_list: Optional[List[str]]) -> None:
     """
     Check that the given include/exclude regexes
     are well formatted
     """
-    for regex in regex_list:
+    for regex in regex_list or []:
         try:
             re.compile(regex)
         except re.error as err:
@@ -40,7 +40,7 @@ def validate_regex(regex_list: List[str]) -> None:
             raise InvalidPatternException(msg) from err
 
 
-def _filter(filter_pattern: Optional[FilterPattern], name: str) -> bool:
+def _filter(filter_pattern: Optional[FilterPattern], name: Optional[str]) -> bool:
     """
     Return True if the name needs to be filtered, False otherwise
 
@@ -58,24 +58,32 @@ def _filter(filter_pattern: Optional[FilterPattern], name: str) -> bool:
         # Filter pattern is present but not the name so we'll filter it out
         return True
 
+    validate_regex(filter_pattern.includes)
+    validate_regex(filter_pattern.excludes)
+
+    if filter_pattern.includes and filter_pattern.excludes:
+        return not any(
+            name
+            for regex in filter_pattern.includes
+            if (re.match(regex, name, re.IGNORECASE))
+        ) or any(
+            name
+            for regex in filter_pattern.excludes
+            if (re.match(regex, name, re.IGNORECASE))
+        )
+
     if filter_pattern.includes:
-        validate_regex(filter_pattern.includes)
-        return not any(  # pylint: disable=use-a-generator
-            [
-                name
-                for regex in filter_pattern.includes
-                if (re.match(regex, name, re.IGNORECASE))
-            ]
+        return not any(
+            name
+            for regex in filter_pattern.includes
+            if (re.match(regex, name, re.IGNORECASE))
         )
 
     if filter_pattern.excludes:
-        validate_regex(filter_pattern.excludes)
-        return any(  # pylint: disable=use-a-generator
-            [
-                name
-                for regex in filter_pattern.excludes
-                if (re.match(regex, name, re.IGNORECASE))
-            ]
+        return any(
+            name
+            for regex in filter_pattern.excludes
+            if (re.match(regex, name, re.IGNORECASE))
         )
 
     return False
@@ -272,3 +280,46 @@ def filter_by_search_index(
     :return: True for filtering, False otherwise
     """
     return _filter(search_index_filter_pattern, search_index_name)
+
+
+def filter_by_classification(
+    classification_pattern: Optional[FilterPattern], classification_name: str
+) -> bool:
+    """
+    Return True if the models needs to be filtered, False otherwise
+
+    Include takes precedence over exclude
+
+    :param search_index_filter_pattern: Model defining search index filtering logic
+    :param search_index_name: search index name
+    :return: True for filtering, False otherwise
+    """
+    return _filter(classification_pattern, classification_name)
+
+
+def filter_by_collection(
+    collection_pattern: Optional[FilterPattern], collection_name: str
+) -> bool:
+    """
+    Return True if the models needs to be filtered, False otherwise
+
+    Include takes precedence over exclude
+
+    :param collection_pattern: Model defining collection filtering logic
+    :param collection_name: collection name
+    :return: True for filtering, False otherwise
+    """
+    return _filter(collection_pattern, collection_name)
+
+
+def filter_by_tag(tag_pattern: Optional[FilterPattern], tag_name: str) -> bool:
+    """
+    Return True if the models needs to be filtered, False otherwise
+
+    Include takes precedence over exclude
+
+    :param tag_pattern: Model defining tag filtering logic
+    :param tag_name: tag name
+    :return: True for filtering, False otherwise
+    """
+    return _filter(tag_pattern, tag_name)

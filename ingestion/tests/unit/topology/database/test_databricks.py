@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -48,6 +48,7 @@ mock_databricks_config = {
                 "databaseSchema": "default",
                 "token": "123sawdtesttoken",
                 "hostPort": "localhost:443",
+                "httpPath": "/sql/1.0/warehouses/abcdedfg",
                 "connectionArguments": {"http_path": "/sql/1.0/warehouses/abcdedfg"},
             }
         },
@@ -63,9 +64,7 @@ mock_databricks_config = {
         "openMetadataServerConfig": {
             "hostPort": "http://localhost:8585/api",
             "authProvider": "openmetadata",
-            "securityConfig": {
-                "jwtToken": "eyJraWQiOiJHYjM4OWEtOWY3Ni1nZGpzLWE5MmotMDI0MmJrOTQzNTYiLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImlzQm90IjpmYWxzZSwiaXNzIjoib3Blbi1tZXRhZGF0YS5vcmciLCJpYXQiOjE2NjM5Mzg0NjIsImVtYWlsIjoiYWRtaW5Ab3Blbm1ldGFkYXRhLm9yZyJ9.tS8um_5DKu7HgzGBzS1VTA5uUjKWOCU0B_j08WXBiEC0mr0zNREkqVfwFDD-d24HlNEbrqioLsBuFRiwIWKc1m_ZlVQbG7P36RUxhuv2vbSp80FKyNM-Tj93FDzq91jsyNmsQhyNv_fNr3TXfzzSPjHt8Go0FMMP66weoKMgW2PbXlhVKwEuXUHyakLLzewm9UMeQaEiRzhiTMU3UkLXcKbYEJJvfNFcLwSl9W8JCO_l0Yj3ud-qt_nQYEZwqW6u5nfdQllN133iikV4fM5QZsMCnm8Rq1mvLR0y9bmJiD7fwM1tmJ791TUWqmKaTnP49U493VanKpUAfzIiOiIbhg"
-            },
+            "securityConfig": {"jwtToken": "databricks"},
         }
     },
 }
@@ -103,6 +102,45 @@ MOCK_TABLE = {
     ],
 }
 
+MOCK_TABLE_2 = {
+    "id": "3df43ed7-5f2f-46bb-9793-384c6374a81d",
+    "name": "growth data",
+    "description": "company growth data",
+    "rows": 5,
+    "columns": 2,
+    "schema": {
+        "columns": [
+            {"type": "ARRAY", "name": "quarters.result"},
+            {"type": "NUMBER", "name": "profit"},
+        ]
+    },
+    "owner": {"id": 6024954162, "name": "Sam"},
+    "dataCurrentAt": "2024-07-15T05:30:06Z",
+    "createdAt": "2024-07-15T05:52:21Z",
+    "updatedAt": "2024-07-15T05:30:07Z",
+}
+
+EXPTECTED_TABLE_2 = [
+    CreateTableRequest(
+        name="growth data",
+        displayName="growth data",
+        description="company growth data",
+        tableType=TableType.Regular.value,
+        columns=[
+            Column(
+                name="quarters.result",
+                dataType=DataType.ARRAY.value,
+            ),
+            Column(
+                name="profit",
+                dataType=DataType.NUMBER.value,
+            ),
+        ],
+        databaseSchema=FullyQualifiedEntityName(
+            "local_databricks.hive_metastore.do_it_all_with_default_schema"
+        ),
+    )
+]
 
 EXPECTED_DATABASE_NAMES = ["hive_metastore"]
 EXPECTED_DATABASE_SCHEMA_NAMES = ["default"]
@@ -142,7 +180,7 @@ EXPTECTED_DATABASE_SCHEMA = [
         name="do_it_all_with_default_schema",
         displayName=None,
         description=None,
-        owner=None,
+        owners=None,
         database="local_databricks.hive_metastore",
     )
 ]
@@ -235,9 +273,9 @@ EXPTECTED_TABLE = [
         tableConstraints=None,
         tablePartition=None,
         tableProfilerConfig=None,
-        owner=None,
+        owners=None,
         databaseSchema=FullyQualifiedEntityName(
-            __root__="local_databricks.hive_metastore.do_it_all_with_default_schema"
+            "local_databricks.hive_metastore.do_it_all_with_default_schema"
         ),
         tags=None,
         schemaDefinition=None,
@@ -262,21 +300,21 @@ class DatabricksUnitTest(TestCase):
         test_connection.return_value = False
         db_init_version.return_value = None
 
-        self.config = OpenMetadataWorkflowConfig.parse_obj(mock_databricks_config)
+        self.config = OpenMetadataWorkflowConfig.model_validate(mock_databricks_config)
         self.databricks_source = DatabricksSource.create(
             mock_databricks_config["source"],
             self.config.workflowConfig.openMetadataServerConfig,
         )
         self.databricks_source.context.get().__dict__[
             "database"
-        ] = MOCK_DATABASE.name.__root__
+        ] = MOCK_DATABASE.name.root
         self.databricks_source.context.get().__dict__[
             "database_service"
-        ] = MOCK_DATABASE_SERVICE.name.__root__
+        ] = MOCK_DATABASE_SERVICE.name.root
 
         self.databricks_source.context.get().__dict__[
             "database_schema"
-        ] = MOCK_DATABASE_SCHEMA.name.__root__
+        ] = MOCK_DATABASE_SCHEMA.name.root
 
     def test_database_schema_names(self):
         assert EXPECTED_DATABASE_SCHEMA_NAMES == list(
@@ -314,4 +352,17 @@ class DatabricksUnitTest(TestCase):
                 table_list.append(table)
 
         for _, (expected, original) in enumerate(zip(EXPTECTED_TABLE, table_list)):
+            self.assertEqual(expected, original)
+
+    def test_yield_table_2(self):
+        table_list = []
+        yield_tables = self.databricks_source.yield_table(
+            ("3df43ed7-5f2f-46bb-9793-384c6374a81d", "Regular")
+        )
+
+        for table in yield_tables:
+            if isinstance(table, CreateTableRequest):
+                table_list.append(table)
+
+        for _, (expected, original) in enumerate(zip(EXPTECTED_TABLE_2, table_list)):
             self.assertEqual(expected, original)

@@ -13,17 +13,20 @@
 
 package org.openmetadata.service.events;
 
+import static org.openmetadata.common.utils.CommonUtil.nullOrEmpty;
+
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.container.ContainerResponseContext;
+import jakarta.ws.rs.container.ContainerResponseFilter;
+import jakarta.ws.rs.core.UriInfo;
+import jakarta.ws.rs.ext.Provider;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
-import javax.ws.rs.container.ContainerRequestContext;
-import javax.ws.rs.container.ContainerResponseContext;
-import javax.ws.rs.container.ContainerResponseFilter;
-import javax.ws.rs.core.UriInfo;
-import javax.ws.rs.ext.Provider;
 import lombok.extern.slf4j.Slf4j;
 import org.openmetadata.service.OpenMetadataApplicationConfig;
 import org.openmetadata.service.security.JwtFilter;
@@ -44,22 +47,26 @@ public class EventFilter implements ContainerResponseFilter {
     registerEventHandlers(config);
   }
 
+  @SuppressWarnings("unchecked")
   private void registerEventHandlers(OpenMetadataApplicationConfig config) {
-    try {
+    if (!nullOrEmpty(config.getEventHandlerConfiguration())) {
       Set<String> eventHandlerClassNames =
           new HashSet<>(config.getEventHandlerConfiguration().getEventHandlerClassNames());
       for (String eventHandlerClassName : eventHandlerClassNames) {
-        @SuppressWarnings("unchecked")
-        EventHandler eventHandler =
-            ((Class<EventHandler>) Class.forName(eventHandlerClassName))
-                .getConstructor()
-                .newInstance();
-        eventHandler.init(config);
-        eventHandlers.add(eventHandler);
-        LOG.info("Added event handler {}", eventHandlerClassName);
+        try {
+          EventHandler eventHandler =
+              ((Class<EventHandler>) Class.forName(eventHandlerClassName))
+                  .getConstructor()
+                  .newInstance();
+          eventHandler.init(config);
+          eventHandlers.add(eventHandler);
+          LOG.info("Added event handler {}", eventHandlerClassName);
+        } catch (Exception e) {
+          LOG.info("Exception ", e);
+        }
       }
-    } catch (Exception e) {
-      LOG.info("Exception ", e);
+    } else {
+      LOG.info("Event handler configuration is empty");
     }
   }
 
@@ -79,7 +86,8 @@ public class EventFilter implements ContainerResponseFilter {
               if (JwtFilter.EXCLUDED_ENDPOINTS.stream()
                   .noneMatch(endpoint -> uriInfo.getPath().contains(endpoint))) {
                 ParallelStreamUtil.runAsync(
-                    () -> eventHandler.process(requestContext, responseContext), forkJoinPool);
+                    (Callable<Void>) () -> eventHandler.process(requestContext, responseContext),
+                    forkJoinPool);
               }
             });
   }

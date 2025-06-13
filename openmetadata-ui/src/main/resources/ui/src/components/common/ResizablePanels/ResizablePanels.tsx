@@ -10,11 +10,13 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+import { Button, Card, Tooltip } from 'antd';
 import classNames from 'classnames';
-import React from 'react';
+import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ReflexContainer, ReflexElement, ReflexSplitter } from 'react-reflex';
+import { ReactComponent as SidebarCollapsedIcon } from '../../../assets/svg/ic-sidebar-collapsed.svg';
 import DocumentTitle from '../DocumentTitle/DocumentTitle';
-import PanelContainer from './PanelContainer/PanelContainer';
 import './resizable-panels.less';
 import { ResizablePanelsProps } from './ResizablePanels.interface';
 
@@ -26,17 +28,30 @@ const ResizablePanels: React.FC<ResizablePanelsProps> = ({
   pageTitle,
   hideSecondPanel = false,
 }) => {
+  const { t } = useTranslation();
+  const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
+  const isFirstPanelWrapInCard = useMemo(() => {
+    return firstPanel.wrapInCard ?? true;
+  }, [firstPanel.wrapInCard]);
+
+  const isSecondPanelWrapInCard = useMemo(() => {
+    return secondPanel.wrapInCard ?? true;
+  }, [secondPanel.wrapInCard]);
+
+  const handleCollapse = () => {
+    setIsRightPanelCollapsed((prev) => !prev);
+  };
+
   return (
     <>
-      <DocumentTitle title={pageTitle} />
+      {pageTitle && <DocumentTitle title={pageTitle} />}
       <ReflexContainer
-        className={classNames(className, 'bg-white')}
-        orientation={orientation}
-        style={{ height: 'calc(100vh - 64px)' }}>
+        className={classNames(className, 'resizable-panels-layout bg-grey')}
+        orientation={orientation}>
         <ReflexElement
-          propagateDimensions
-          className={classNames(firstPanel.className, {
-            'full-width': hideSecondPanel,
+          className={classNames(firstPanel.className, 'resizable-first-panel', {
+            'full-width': hideSecondPanel || isRightPanelCollapsed,
+            'h-full overflow-y-auto': firstPanel.allowScroll,
           })}
           data-testid={firstPanel.className}
           flex={firstPanel.flex}
@@ -44,43 +59,76 @@ const ResizablePanels: React.FC<ResizablePanelsProps> = ({
           onStopResize={(args) => {
             firstPanel.onStopResize?.(args.component.props.flex);
           }}>
-          <PanelContainer overlay={firstPanel.overlay}>
-            {firstPanel.children}
-          </PanelContainer>
+          {isFirstPanelWrapInCard ? (
+            <Card
+              className={classNames(firstPanel.cardClassName, {
+                // If allowScroll is true, the card will not have a scrollbar
+                'h-full overflow-y-auto': !firstPanel.allowScroll,
+              })}>
+              {firstPanel.children}
+            </Card>
+          ) : (
+            firstPanel.children
+          )}
         </ReflexElement>
 
         <ReflexSplitter
-          className={classNames('splitter', { hidden: hideSecondPanel })}>
-          <div
-            className={classNames({
-              'panel-grabber-vertical': orientation === 'vertical',
-              'panel-grabber-horizontal': orientation === 'horizontal',
-            })}>
+          className={classNames(
+            'splitter right-panel-splitter',
+            { hidden: hideSecondPanel },
+            { collapsed: isRightPanelCollapsed }
+          )}>
+          {isRightPanelCollapsed && (
+            <Card className="reflex-card card-padding-0">
+              <Tooltip placement="right" title={t('label.expand')}>
+                <Button
+                  className="mr-2 header-collapse-button"
+                  data-testid="sidebar-toggle"
+                  icon={<SidebarCollapsedIcon height={20} width={20} />}
+                  size="middle"
+                  type="text"
+                  onClick={handleCollapse}
+                />
+              </Tooltip>
+            </Card>
+          )}
+          {!isRightPanelCollapsed && (
             <div
-              className={classNames('handle-icon', {
-                'handle-icon-vertical ': orientation === 'vertical',
-                'handle-icon-horizontal': orientation === 'horizontal',
-              })}
-            />
-          </div>
+              className={classNames({
+                'panel-grabber-vertical': orientation === 'vertical',
+                'panel-grabber-horizontal': orientation === 'horizontal',
+              })}>
+              <div
+                className={classNames('handle-icon', {
+                  'handle-icon-vertical ': orientation === 'vertical',
+                  'handle-icon-horizontal': orientation === 'horizontal',
+                })}
+              />
+            </div>
+          )}
         </ReflexSplitter>
 
         <ReflexElement
-          propagateDimensions
-          className={classNames(secondPanel.className, {
-            hidden: hideSecondPanel,
-          })}
+          className={classNames(
+            secondPanel.className,
+            'resizable-second-panel',
+            {
+              hidden: hideSecondPanel,
+              'right-panel-collapsed': isRightPanelCollapsed,
+            }
+          )}
           data-testid={secondPanel.className}
-          flex={secondPanel.flex}
-          minSize={secondPanel.minWidth}
+          flex={isRightPanelCollapsed ? 0 : secondPanel.flex}
+          minSize={isRightPanelCollapsed ? 0 : secondPanel.minWidth}
           onStopResize={(args) => {
             secondPanel.onStopResize?.(args.component.props.flex);
           }}>
-          {!hideSecondPanel && (
-            <PanelContainer overlay={secondPanel.overlay}>
-              {secondPanel.children}
-            </PanelContainer>
-          )}
+          {!hideSecondPanel &&
+            (isSecondPanelWrapInCard ? (
+              <Card className="reflex-card">{secondPanel.children}</Card>
+            ) : (
+              secondPanel.children
+            ))}
         </ReflexElement>
       </ReflexContainer>
     </>

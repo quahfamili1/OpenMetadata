@@ -13,12 +13,12 @@
 
 package org.openmetadata.service.security;
 
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.container.ContainerRequestFilter;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.SecurityContext;
+import jakarta.ws.rs.core.UriInfo;
 import java.util.HashSet;
-import javax.ws.rs.container.ContainerRequestContext;
-import javax.ws.rs.container.ContainerRequestFilter;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.SecurityContext;
-import javax.ws.rs.core.UriInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.openmetadata.schema.api.security.AuthenticationConfiguration;
 import org.openmetadata.schema.api.security.AuthorizerConfiguration;
@@ -33,7 +33,8 @@ public class NoopFilter implements ContainerRequestFilter {
       AuthorizerConfiguration authorizerConfiguration) {}
 
   public void filter(ContainerRequestContext containerRequestContext) {
-    CatalogPrincipal catalogPrincipal = new CatalogPrincipal("anonymous");
+    CatalogPrincipal catalogPrincipal =
+        new CatalogPrincipal("anonymous", "anonymous@openmetadata.org");
     String scheme = containerRequestContext.getUriInfo().getRequestUri().getScheme();
     CatalogSecurityContext catalogSecurityContext =
         new CatalogSecurityContext(

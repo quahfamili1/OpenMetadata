@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -23,12 +23,12 @@ How to use this test
    We will need to perform at least one `DELETE`, `INSERT`, `UPDATE` on any table from the schema.
    query example:
     ```
-    INSERT INTO TEST_DB.TEST_SCHEMA.NEW_TAB VALUES 
+    INSERT INTO TEST_DB.TEST_SCHEMA.NEW_TAB VALUES
     (1, 'FOO'),
     (2, 'BAR'),
     (3, 'BAZZ')
 
-    INSERT OVERWRITE INTO TEST_DB.TEST_SCHEMA.NEW_TAB VALUES 
+    INSERT OVERWRITE INTO TEST_DB.TEST_SCHEMA.NEW_TAB VALUES
     (4, 'FOOBAR'),
     (5, 'FOOBAZZ'),
     (6, 'BARBAZZ')
@@ -66,7 +66,6 @@ from metadata.utils.time_utils import (
 )
 from metadata.workflow.metadata import MetadataWorkflow
 from metadata.workflow.profiler import ProfilerWorkflow
-from metadata.workflow.workflow_output_handler import print_status
 
 TESTS_ROOT_DIR = pathlib.Path(__file__).parent.parent.parent.parent
 SNOWFLAKE_CONFIG_FILE = "cli_e2e/database/snowflake/snowflake.yaml"
@@ -125,14 +124,16 @@ class TestSnowflakeystem(TestCase):
         cls.metadata_config_dict = cls.config["workflowConfig"][
             "openMetadataServerConfig"
         ]
-        cls.metadata_config = OpenMetadataConnection.parse_obj(cls.metadata_config_dict)
+        cls.metadata_config = OpenMetadataConnection.model_validate(
+            cls.metadata_config_dict
+        )
         cls.metadata = OpenMetadata(cls.metadata_config)
 
         # run the ingestion workflow
         ingestion_workflow = MetadataWorkflow.create(cls.config)
         ingestion_workflow.execute()
         ingestion_workflow.raise_from_status()
-        print_status(ingestion_workflow)
+        ingestion_workflow.print_status()
         ingestion_workflow.stop()
 
         # get table fqn
@@ -157,7 +158,7 @@ class TestSnowflakeystem(TestCase):
         profiler_workflow = ProfilerWorkflow.create(config)
         profiler_workflow.execute()
         profiler_workflow.raise_from_status()
-        print_status(profiler_workflow)
+        profiler_workflow.print_status()
         profiler_workflow.stop()
 
         # get latest profile metrics

@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -13,7 +13,7 @@ Dynamo source methods.
 """
 
 import traceback
-from typing import Dict, List, Optional, Union
+from typing import Dict, Iterable, List, Optional, Union
 
 from metadata.generated.schema.entity.data.table import TableType
 from metadata.generated.schema.entity.services.connections.database.dynamoDBConnection import (
@@ -27,6 +27,7 @@ from metadata.ingestion.ometa.ometa_api import OpenMetadata
 from metadata.ingestion.source.database.common_nosql_source import (
     SAMPLE_SIZE,
     CommonNoSQLSource,
+    TableNameAndType,
 )
 from metadata.ingestion.source.database.dynamodb.models import TableResponse
 from metadata.utils.constants import DEFAULT_DATABASE
@@ -49,8 +50,8 @@ class DynamodbSource(CommonNoSQLSource):
     def create(
         cls, config_dict, metadata: OpenMetadata, pipeline_name: Optional[str] = None
     ):
-        config: WorkflowSource = WorkflowSource.parse_obj(config_dict)
-        connection: DynamoDBConnection = config.serviceConnection.__root__.config
+        config: WorkflowSource = WorkflowSource.model_validate(config_dict)
+        connection: DynamoDBConnection = config.serviceConnection.root.config
         if not isinstance(connection, DynamoDBConnection):
             raise InvalidSourceException(
                 f"Expected DynamoDBConnection, but got {connection}"
@@ -64,14 +65,16 @@ class DynamodbSource(CommonNoSQLSource):
         """
         return [DEFAULT_DATABASE]
 
-    def get_table_name_list(self, schema_name: str) -> List[str]:
+    def query_table_names_and_types(
+        self, schema_name: str
+    ) -> Iterable[TableNameAndType]:
         """
         Method to get list of table names available within schema db
         need to be overridden by sources
         """
         try:
             tables = self.dynamodb.tables.all()
-            return [table.name for table in tables]
+            return [TableNameAndType(name=table.name) for table in tables]
         except Exception as err:
             logger.debug(traceback.format_exc())
             logger.error(f"Failed to list DynamoDB table names: {err}")
@@ -84,8 +87,8 @@ class DynamodbSource(CommonNoSQLSource):
         Method to get actual data available within table
         need to be overridden by sources
         """
+        attributes = []
         try:
-            attributes = []
             scan_kwargs = {}
             done = False
             start_key = None
@@ -93,7 +96,7 @@ class DynamodbSource(CommonNoSQLSource):
             while not done:
                 if start_key:
                     scan_kwargs["ExclusiveStartKey"] = start_key
-                response = TableResponse.parse_obj(table.scan(**scan_kwargs))
+                response = TableResponse.model_validate(table.scan(**scan_kwargs))
                 attributes.extend(response.Items)
                 start_key = response.LastEvaluatedKey
                 done = start_key is None or len(attributes) >= SAMPLE_SIZE
@@ -103,7 +106,7 @@ class DynamodbSource(CommonNoSQLSource):
             logger.warning(
                 f"Failed to read DynamoDB attributes for [{table_name}]: {err}"
             )
-        return []
+        return attributes
 
     def get_source_url(
         self,

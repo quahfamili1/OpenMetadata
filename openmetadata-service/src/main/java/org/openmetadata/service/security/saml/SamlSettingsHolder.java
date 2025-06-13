@@ -30,10 +30,10 @@ import org.openmetadata.common.utils.CommonUtil;
 import org.openmetadata.service.OpenMetadataApplicationConfig;
 
 public class SamlSettingsHolder {
-  private static SamlSettingsHolder instance;
+  private static volatile Saml2Settings saml2Settings;
+  private static final Object lock = new Object();
   private Map<String, Object> samlData;
   private SettingsBuilder builder;
-  @Getter private Saml2Settings saml2Settings;
   @Getter private String relayState;
   @Getter private long tokenValidity;
   @Getter private String domain;
@@ -44,10 +44,7 @@ public class SamlSettingsHolder {
   }
 
   public static SamlSettingsHolder getInstance() {
-    if (instance == null) {
-      instance = new SamlSettingsHolder();
-    }
-    return instance;
+    return new SamlSettingsHolder();
   }
 
   public void initDefaultSettings(OpenMetadataApplicationConfig catalogApplicationConfig)
@@ -108,17 +105,14 @@ public class SamlSettingsHolder {
     samlData.put(
         SettingsBuilder.SECURITY_WANT_ASSERTIONS_ENCRYPTED,
         securityConfig.getWantAssertionEncrypted());
-    samlData.put(
-        SettingsBuilder.SECURITY_WANT_NAMEID_ENCRYPTED, securityConfig.getWantNameIdEncrypted());
+    samlData.put(SettingsBuilder.SECURITY_WANT_NAMEID_ENCRYPTED, false);
     samlData.put(SettingsBuilder.SECURITY_REQUESTED_AUTHNCONTEXTCOMPARISON, "exact");
     samlData.put(
         SettingsBuilder.SECURITY_SIGNATURE_ALGORITHM,
         "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256");
     samlData.put(
         SettingsBuilder.SECURITY_DIGEST_ALGORITHM, "http://www.w3.org/2001/04/xmlenc#sha256");
-    if (securityConfig.getSendSignedAuthRequest()
-        || securityConfig.getWantAssertionEncrypted()
-        || Boolean.TRUE.equals(securityConfig.getWantNameIdEncrypted())) {
+    if (securityConfig.getSendSignedAuthRequest() || securityConfig.getWantAssertionEncrypted()) {
       if (!CommonUtil.nullOrEmpty(securityConfig.getKeyStoreFilePath())
           && !CommonUtil.nullOrEmpty(securityConfig.getKeyStorePassword())
           && !CommonUtil.nullOrEmpty(securityConfig.getKeyStoreAlias())) {
@@ -142,5 +136,20 @@ public class SamlSettingsHolder {
     }
     samlData.put(SettingsBuilder.UNIQUE_ID_PREFIX_PROPERTY_KEY, "OPENMETADATA_");
     saml2Settings = builder.fromValues(samlData).build();
+  }
+
+  public static void setSaml2Settings(Saml2Settings settings) {
+    synchronized (lock) {
+      saml2Settings = settings;
+    }
+  }
+
+  public static Saml2Settings getSaml2Settings() {
+    synchronized (lock) {
+      if (saml2Settings == null) {
+        throw new IllegalStateException("SAML settings have not been initialized");
+      }
+      return saml2Settings;
+    }
   }
 }

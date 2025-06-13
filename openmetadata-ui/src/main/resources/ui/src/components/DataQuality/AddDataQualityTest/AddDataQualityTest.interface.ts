@@ -18,19 +18,15 @@ import { IngestionPipeline } from '../../../generated/entity/services/ingestionP
 import { TestCase } from '../../../generated/tests/testCase';
 import { TestDefinition } from '../../../generated/tests/testDefinition';
 import { TestSuite } from '../../../generated/tests/testSuite';
+import { ListTestCaseParamsBySearch } from '../../../rest/testAPI';
 
 export interface AddDataQualityTestProps {
   table: Table;
 }
 
-export interface SelectTestSuiteProps {
-  initialValue?: SelectTestSuiteType;
-  onSubmit: (data: SelectTestSuiteType) => void;
-}
-
 export interface TestCaseFormProps {
   initialValue?: CreateTestCase;
-  onSubmit: (data: CreateTestCase) => void;
+  onSubmit: (data: CreateTestCase) => Promise<void>;
   onCancel: (data: CreateTestCase) => void;
   table: Table;
 }
@@ -38,25 +34,27 @@ export interface TestCaseFormProps {
 export interface TestSuiteIngestionProps {
   testSuite: TestSuite;
   ingestionPipeline?: IngestionPipeline;
-  onCancel: () => void;
+  onCancel?: () => void;
+  onViewServiceClick?: () => void;
 }
 
 export type TestSuiteIngestionDataType = {
-  repeatFrequency: string;
+  cron?: string;
   enableDebugLog?: boolean;
+  testCases?: string[];
+  name?: string;
+  selectAllTestCases?: boolean;
+  raiseOnError?: boolean;
 };
 
-export interface TestSuiteSchedulerProps {
+export interface AddTestSuitePipelineProps {
   initialData?: Partial<TestSuiteIngestionDataType>;
-  allowEnableDebugLog?: boolean;
   isLoading: boolean;
+  testSuite?: TestSuite;
   onSubmit: (data: TestSuiteIngestionDataType) => void;
-  onCancel: () => void;
-  buttonProps?: {
-    okText: string;
-    cancelText: string;
-  };
   includePeriodOptions?: string[];
+  onCancel?: () => void;
+  testCaseParams?: ListTestCaseParamsBySearch;
 }
 
 export interface RightPanelProps {
@@ -85,3 +83,12 @@ export interface EditTestCaseModalProps {
   onCancel: () => void;
   onUpdate?: (testCase: TestCase) => void;
 }
+
+export type TestCaseFormType = {
+  testName: string;
+  params: Record<string, string | { [key: string]: string }[]>;
+  useDynamicAssertion?: boolean;
+  testTypeId: string;
+  computePassedFailedRowCount?: boolean;
+  description?: string;
+};

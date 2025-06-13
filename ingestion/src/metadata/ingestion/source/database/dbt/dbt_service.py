@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -13,9 +13,16 @@ DBT service Topology.
 """
 
 from abc import ABC, abstractmethod
-from typing import Iterable
+from typing import Iterable, List
 
-from dbt_artifacts_parser.parser import parse_catalog, parse_manifest, parse_run_results
+from collate_dbt_artifacts_parser.parser import (
+    parse_catalog,
+    parse_manifest,
+    parse_run_results,
+    parse_sources,
+)
+from pydantic import Field
+from typing_extensions import Annotated
 
 from metadata.generated.schema.api.lineage.addLineage import AddLineageRequest
 from metadata.generated.schema.api.tests.createTestCase import CreateTestCaseRequest
@@ -35,6 +42,11 @@ from metadata.ingestion.models.topology import (
     TopologyNode,
 )
 from metadata.ingestion.source.database.database_service import DataModelLink
+from metadata.ingestion.source.database.dbt.constants import (
+    REQUIRED_CONSTRAINT_KEYS,
+    REQUIRED_NODE_KEYS,
+    REQUIRED_RESULTS_KEYS,
+)
 from metadata.ingestion.source.database.dbt.dbt_config import get_dbt_details
 from metadata.ingestion.source.database.dbt.models import (
     DbtFiles,
@@ -54,7 +66,9 @@ class DbtServiceTopology(ServiceTopology):
     dbt files -> dbt tags -> data models -> descriptions -> lineage -> tests.
     """
 
-    root = TopologyNode(
+    root: Annotated[
+        TopologyNode, Field(description="Root node for the topology")
+    ] = TopologyNode(
         producer="get_dbt_files",
         stages=[
             NodeStage(
@@ -69,7 +83,9 @@ class DbtServiceTopology(ServiceTopology):
             "process_dbt_tests",
         ],
     )
-    process_dbt_data_model = TopologyNode(
+    process_dbt_data_model: Annotated[
+        TopologyNode, Field(description="Process dbt data models")
+    ] = TopologyNode(
         producer="get_dbt_objects",
         stages=[
             NodeStage(
@@ -87,7 +103,9 @@ class DbtServiceTopology(ServiceTopology):
             ),
         ],
     )
-    process_dbt_entities = TopologyNode(
+    process_dbt_entities: Annotated[
+        TopologyNode, Field(description="Process dbt entities")
+    ] = TopologyNode(
         producer="get_data_model",
         stages=[
             NodeStage(
@@ -104,9 +122,16 @@ class DbtServiceTopology(ServiceTopology):
                 processor="process_dbt_descriptions",
                 nullable=True,
             ),
+            NodeStage(
+                type_=DataModelLink,
+                processor="process_dbt_owners",
+                nullable=True,
+            ),
         ],
     )
-    process_dbt_tests = TopologyNode(
+    process_dbt_tests: Annotated[
+        TopologyNode, Field(description="Process dbt tests")
+    ] = TopologyNode(
         producer="get_dbt_tests",
         stages=[
             NodeStage(
@@ -150,7 +175,7 @@ class DbtServiceSource(TopologyRunnerMixin, Source, ABC):
         # This step is necessary as the manifest file may not always adhere to the schema definition
         # and the presence of other nodes can hinder the ingestion process from progressing any further.
         # Therefore, we are only retaining the essential data for further processing.
-        required_manifest_keys = ["nodes", "sources", "metadata"]
+        required_manifest_keys = {"nodes", "sources", "metadata"}
         manifest_dict.update(
             {
                 key: {}
@@ -158,6 +183,42 @@ class DbtServiceSource(TopologyRunnerMixin, Source, ABC):
                 if key.lower() not in required_manifest_keys
             }
         )
+
+        for field in ["nodes", "sources"]:
+            for node, value in manifest_dict.get(  # pylint: disable=unused-variable
+                field
+            ).items():
+                keys_to_delete = [
+                    key for key in value if key.lower() not in REQUIRED_NODE_KEYS
+                ]
+                for key in keys_to_delete:
+                    del value[key]
+                if value.get("columns"):
+                    for col_name, value in value[
+                        "columns"
+                    ].items():  # pylint: disable=unused-variable
+                        if value.get("constraints"):
+                            keys_to_delete = [
+                                key
+                                for key in value
+                                if key.lower() not in REQUIRED_CONSTRAINT_KEYS
+                            ]
+                            for key in keys_to_delete:
+                                del value[key]
+                        else:
+                            value["constraints"] = None
+
+    def remove_run_result_non_required_keys(self, run_results: List[dict]):
+        """
+        Method to remove the non required keys from run results file
+        """
+        for run_result in run_results:
+            for result in run_result.get("results"):
+                keys_to_delete = [
+                    key for key in result if key.lower() not in REQUIRED_RESULTS_KEYS
+                ]
+                for key in keys_to_delete:
+                    del result[key]
 
     def get_dbt_files(self) -> Iterable[DbtFiles]:
         dbt_files = get_dbt_details(self.source_config.dbtConfigSource)
@@ -169,14 +230,23 @@ class DbtServiceSource(TopologyRunnerMixin, Source, ABC):
         self.remove_manifest_non_required_keys(
             manifest_dict=self.context.get().dbt_file.dbt_manifest
         )
+        if self.context.get().dbt_file.dbt_run_results:
+            self.remove_run_result_non_required_keys(
+                run_results=self.context.get().dbt_file.dbt_run_results
+            )
+
         dbt_objects = DbtObjects(
             dbt_catalog=parse_catalog(self.context.get().dbt_file.dbt_catalog)
             if self.context.get().dbt_file.dbt_catalog
             else None,
             dbt_manifest=parse_manifest(self.context.get().dbt_file.dbt_manifest),
-            dbt_run_results=parse_run_results(
-                self.context.get().dbt_file.dbt_run_results
-            )
+            dbt_sources=parse_sources(self.context.get().dbt_file.dbt_sources)
+            if self.context.get().dbt_file.dbt_sources
+            else None,
+            dbt_run_results=[
+                parse_run_results(run_result_file)
+                for run_result_file in self.context.get().dbt_file.dbt_run_results
+            ]
             if self.context.get().dbt_file.dbt_run_results
             else None,
         )
@@ -206,8 +276,7 @@ class DbtServiceSource(TopologyRunnerMixin, Source, ABC):
         """
         Prepare the data models
         """
-        for data_model_link in self.context.get().data_model_links:
-            yield data_model_link
+        yield from self.context.get().data_model_links
 
     @abstractmethod
     def create_dbt_lineage(self, data_model_link: DataModelLink) -> AddLineageRequest:
@@ -227,6 +296,12 @@ class DbtServiceSource(TopologyRunnerMixin, Source, ABC):
     def process_dbt_descriptions(self, data_model_link: DataModelLink):
         """
         Method to process DBT descriptions using patch APIs
+        """
+
+    @abstractmethod
+    def process_dbt_owners(self, data_model_link: DataModelLink):
+        """
+        Method to process DBT owners using patch APIs
         """
 
     def get_dbt_tests(self) -> dict:

@@ -13,8 +13,8 @@
 
 package org.openmetadata.service.security;
 
+import jakarta.ws.rs.core.SecurityContext;
 import java.util.List;
-import javax.ws.rs.core.SecurityContext;
 import org.openmetadata.schema.type.EntityReference;
 import org.openmetadata.schema.type.ResourcePermission;
 import org.openmetadata.service.OpenMetadataApplicationConfig;
@@ -41,12 +41,17 @@ public interface Authorizer {
       OperationContext operationContext,
       ResourceContextInterface resourceContext);
 
+  void authorizeRequests(
+      SecurityContext securityContext, List<AuthRequest> requests, AuthorizationLogic logic);
+
   void authorizeAdmin(SecurityContext securityContext);
+
+  void authorizeAdmin(String adminName);
 
   void authorizeAdminOrBot(SecurityContext securityContext);
 
   boolean shouldMaskPasswords(SecurityContext securityContext);
 
   /** Let the user view PII Sensitive data */
-  boolean authorizePII(SecurityContext securityContext, EntityReference owner);
+  boolean authorizePII(SecurityContext securityContext, List<EntityReference> owner);
 }

@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -54,7 +54,7 @@ class TestRegistryNamesMatchTestDefinition(TestCase):
     """Test the names in the registry match that of the ones in the Test Definition"""
 
     metadata = OpenMetadata(
-        OpenMetadataConnection.parse_obj(
+        OpenMetadataConnection.model_validate(
             test_suite_config["workflowConfig"]["openMetadataServerConfig"]
         )
     )
@@ -63,7 +63,7 @@ class TestRegistryNamesMatchTestDefinition(TestCase):
         """test all the sqa names in the registry match the ones from the test definition"""
 
         test_definition_names = {
-            entity.name.__root__
+            entity.name.root
             for entity in self.metadata.list_all_entities(
                 entity=TestDefinition, params={"limit": "100"}
             )
@@ -82,7 +82,7 @@ class TestRegistryNamesMatchTestDefinition(TestCase):
         """test all the sqa names in the registry match the ones from the test definition"""
 
         test_definition_names = {
-            entity.name.__root__
+            entity.name.root
             for entity in self.metadata.list_all_entities(
                 entity=TestDefinition, params={"limit": "100"}
             )

@@ -15,13 +15,14 @@ package org.openmetadata.service.events;
 
 import static org.openmetadata.service.formatter.util.FormatterUtil.getChangeEventFromResponseContext;
 
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.container.ContainerResponseContext;
+import jakarta.ws.rs.core.SecurityContext;
 import java.util.Optional;
-import javax.ws.rs.container.ContainerRequestContext;
-import javax.ws.rs.container.ContainerResponseContext;
-import javax.ws.rs.core.SecurityContext;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.openmetadata.schema.type.ChangeEvent;
+import org.openmetadata.schema.type.EventType;
 import org.openmetadata.service.Entity;
 import org.openmetadata.service.OpenMetadataApplicationConfig;
 import org.openmetadata.service.util.JsonUtils;
@@ -54,7 +55,9 @@ public class ChangeEventHandler implements EventHandler {
           getChangeEventFromResponseContext(responseContext, loggedInUserName);
       if (optionalChangeEvent.isPresent()) {
         ChangeEvent changeEvent = optionalChangeEvent.get();
-        if (changeEvent.getEntityType().equals(Entity.QUERY)) {
+        // Test Connection workflows shouldn't produce changeEvents (Entity.WORKFLOW)
+        if (changeEvent.getEntityType().equals(Entity.QUERY)
+            || changeEvent.getEntityType().equals(Entity.WORKFLOW)) {
           return null;
         }
         // Always set the Change Event Username as context Principal, the one creating the CE
@@ -71,8 +74,10 @@ public class ChangeEventHandler implements EventHandler {
           changeEvent.setEntity(JsonUtils.pojoToMaskedJson(entity));
         }
 
-        // Thread are created in FeedRepository Directly
-        Entity.getCollectionDAO().changeEventDAO().insert(JsonUtils.pojoToJson(changeEvent));
+        // Insert ChangeEvents if ENTITY Changed
+        if (!changeEvent.getEventType().equals(EventType.ENTITY_NO_CHANGE)) {
+          Entity.getCollectionDAO().changeEventDAO().insert(JsonUtils.pojoToJson(changeEvent));
+        }
       }
     } catch (Exception e) {
       LOG.error(
@@ -83,7 +88,7 @@ public class ChangeEventHandler implements EventHandler {
     return null;
   }
 
-  private static ChangeEvent copyChangeEvent(ChangeEvent changeEvent) {
+  public static ChangeEvent copyChangeEvent(ChangeEvent changeEvent) {
     return new ChangeEvent()
         .withId(changeEvent.getId())
         .withEventType(changeEvent.getEventType())

@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -67,7 +67,7 @@ class BulkLkmlParser(metaclass=Singleton):
         file_paths = self.reader.get_local_files(search_key=".view.lkml")
         for _path in file_paths:
             file = self._read_file(Includes(_path))
-            lkml_file = LkmlFile.parse_obj(lkml.load(file))
+            lkml_file = LkmlFile.model_validate(lkml.load(file))
             self.parsed_files[Includes(_path)] = file
             for view in lkml_file.views:
                 view.source_file = _path
@@ -120,7 +120,7 @@ class BulkLkmlParser(metaclass=Singleton):
         """
         if isinstance(self.reader, ApiReader):
             return (
-                f"Parser at [{self.reader.credentials.repositoryOwner.__root__}/"
-                f"{self.reader.credentials.repositoryName.__root__}]"
+                f"Parser at [{self.reader.credentials.repositoryOwner.root}/"
+                f"{self.reader.credentials.repositoryName.root}]"
             )
         return f"Parser at [{self.reader}]"

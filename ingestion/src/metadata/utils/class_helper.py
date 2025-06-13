@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -22,6 +22,9 @@ from metadata.generated.schema.entity.services.ingestionPipelines.ingestionPipel
     PipelineType,
 )
 from metadata.generated.schema.entity.services.serviceType import ServiceType
+from metadata.generated.schema.metadataIngestion.apiServiceMetadataPipeline import (
+    ApiServiceMetadataPipeline,
+)
 from metadata.generated.schema.metadataIngestion.dashboardServiceMetadataPipeline import (
     DashboardServiceMetadataPipeline,
 )
@@ -63,8 +66,12 @@ from metadata.generated.schema.metadataIngestion.testSuitePipeline import (
     TestSuitePipeline,
 )
 from metadata.generated.schema.metadataIngestion.workflow import SourceConfig
+from metadata.generated.schema.tests.testSuite import (
+    ServiceType as TestSuiteServiceType,
+)
 
 SERVICE_TYPE_REF = {
+    ServiceType.Api.value: "apiService",
     ServiceType.Database.value: "databaseService",
     ServiceType.Dashboard.value: "dashboardService",
     ServiceType.Pipeline.value: "pipelineService",
@@ -73,9 +80,12 @@ SERVICE_TYPE_REF = {
     ServiceType.Metadata.value: "metadataService",
     ServiceType.Search.value: "searchService",
     ServiceType.Storage.value: "storageService",
+    # We use test suites as "services" for DQ Ingestion Pipelines
+    TestSuiteServiceType.TestSuite.value: "testSuite",
 }
 
 SOURCE_CONFIG_TYPE_INGESTION = {
+    ApiServiceMetadataPipeline.__name__: PipelineType.metadata,
     DatabaseServiceMetadataPipeline.__name__: PipelineType.metadata,
     DatabaseServiceQueryUsagePipeline.__name__: PipelineType.usage,
     DatabaseServiceQueryLineagePipeline.__name__: PipelineType.lineage,
@@ -103,16 +113,14 @@ def _clean(source_type: str):
     return source_type
 
 
-def get_pipeline_type_from_source_config(
-    source_config_type: SourceConfig.__fields__["config"].type_,
-) -> PipelineType:
+def get_pipeline_type_from_source_config(source_config: SourceConfig) -> PipelineType:
     """From the YAML serviceType, get the Ingestion Pipeline Type"""
     pipeline_type = SOURCE_CONFIG_TYPE_INGESTION.get(
-        source_config_type.__class__.__name__
+        source_config.config.__class__.__name__
     )
     if not pipeline_type:
         raise ValueError(
-            f"Cannot find Pipeline Type for SourceConfig {source_config_type}"
+            f"Cannot find Pipeline Type for SourceConfig {source_config.config}"
         )
     return pipeline_type
 
@@ -120,6 +128,8 @@ def get_pipeline_type_from_source_config(
 def _get_service_type_from(  # pylint: disable=inconsistent-return-statements
     service_subtype: str,
 ) -> ServiceType:
+    if service_subtype.lower() == "testsuite":
+        return TestSuiteServiceType.TestSuite
     for service_type in ServiceType:
         if service_subtype.lower() in [
             subtype.value.lower()

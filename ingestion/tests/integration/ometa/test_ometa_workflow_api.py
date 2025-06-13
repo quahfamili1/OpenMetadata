@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -128,7 +128,7 @@ class OMetaWorkflowTest(TestCase):
         Clean up
         """
 
-        id_ = str(cls.metadata.get_by_name(entity=Workflow, fqn="test").id.__root__)
+        id_ = str(cls.metadata.get_by_name(entity=Workflow, fqn="test").id.root)
 
         cls.metadata.delete(
             entity=Workflow,
@@ -147,7 +147,7 @@ class OMetaWorkflowTest(TestCase):
         self.assertEqual(res.description, self.entity.description)
         self.assertEqual(res.workflowType, self.entity.workflowType)
         self.assertEqual(res.status, WorkflowStatus.Pending)
-        self.assertEqual(res.owner, None)
+        self.assertIsNone(res.owners)
 
     def test_get_name(self):
         """

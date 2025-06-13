@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -74,7 +74,7 @@ def main():
     raw_workflow_config = yaml.safe_load(config)
     raw_workflow_config["pipelineRunId"] = pipeline_run_id
 
-    workflow_config = OpenMetadataWorkflowConfig.parse_obj(raw_workflow_config)
+    workflow_config = OpenMetadataWorkflowConfig.model_validate(raw_workflow_config)
     metadata = OpenMetadata(
         config=workflow_config.workflowConfig.openMetadataServerConfig
     )
@@ -86,13 +86,13 @@ def main():
 
         pipeline_status = metadata.get_pipeline_status(
             workflow_config.ingestionPipelineFQN,
-            str(workflow_config.pipelineRunId.__root__),
+            str(workflow_config.pipelineRunId.root),
         )
 
         # Maybe the workflow was not even initialized
         if not pipeline_status:
             pipeline_status = PipelineStatus(
-                runId=str(workflow_config.pipelineRunId.__root__),
+                runId=str(workflow_config.pipelineRunId.root),
                 startDate=datetime.now().timestamp() * 1000,
                 timestamp=datetime.now().timestamp() * 1000,
             )

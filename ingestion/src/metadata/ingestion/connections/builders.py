@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -31,8 +31,12 @@ from metadata.generated.schema.entity.services.connections.database.common.iamAu
     IamAuthConfigurationSource,
 )
 from metadata.ingestion.connections.headers import inject_query_header_by_conn
+from metadata.ingestion.connections.query_logger import attach_query_tracker
 from metadata.ingestion.connections.secrets import connection_with_options_secrets
 from metadata.utils.constants import BUILDER_PASSWORD_ATTR
+from metadata.utils.logger import cli_logger
+
+logger = cli_logger()
 
 
 @connection_with_options_secrets
@@ -45,8 +49,8 @@ def get_connection_args_common(connection) -> Dict[str, Any]:
     """
 
     return (
-        connection.connectionArguments.__root__
-        if connection.connectionArguments and connection.connectionArguments.__root__
+        connection.connectionArguments.root
+        if connection.connectionArguments and connection.connectionArguments.root
         else {}
     )
 
@@ -73,6 +77,8 @@ def create_generic_db_connection(
         max_overflow=-1,
     )
 
+    attach_query_tracker(engine)
+
     if hasattr(connection, "supportsQueryComment"):
         listen(
             engine,
@@ -90,8 +96,8 @@ def get_connection_options_dict(connection) -> Optional[Dict[str, Any]]:
     dictionary if exists
     """
     return (
-        connection.connectionOptions.__root__
-        if connection.connectionOptions and connection.connectionOptions.__root__
+        connection.connectionOptions.root
+        if connection.connectionOptions and connection.connectionOptions.root
         else None
     )
 
@@ -101,12 +107,12 @@ def init_empty_connection_arguments() -> ConnectionArguments:
     Initialize a ConnectionArguments model with an empty dictionary.
     This helps set keys without further validations.
 
-    Running `ConnectionArguments()` returns `ConnectionArguments(__root__=None)`.
+    Running `ConnectionArguments()` returns `ConnectionArguments(root=None)`.
 
-    Instead, we want `ConnectionArguments(__root__={}})` so that
-    we can pass new keys easily as `connectionArguments.__root__["key"] = "value"`
+    Instead, we want `ConnectionArguments(root={}})` so that
+    we can pass new keys easily as `connectionArguments.root["key"] = "value"`
     """
-    return ConnectionArguments(__root__={})
+    return ConnectionArguments(root={})
 
 
 def init_empty_connection_options() -> ConnectionOptions:
@@ -114,12 +120,12 @@ def init_empty_connection_options() -> ConnectionOptions:
     Initialize a ConnectionOptions model with an empty dictionary.
     This helps set keys without further validations.
 
-    Running `ConnectionOptions()` returns `ConnectionOptions(__root__=None)`.
+    Running `ConnectionOptions()` returns `ConnectionOptions(root=None)`.
 
-    Instead, we want `ConnectionOptions(__root__={}})` so that
-    we can pass new keys easily as `ConnectionOptions.__root__["key"] = "value"`
+    Instead, we want `ConnectionOptions(root={}})` so that
+    we can pass new keys easily as `ConnectionOptions.root["key"] = "value"`
     """
-    return ConnectionOptions(__root__={})
+    return ConnectionOptions(root={})
 
 
 def _add_password(url: str, connection) -> str:
@@ -152,6 +158,9 @@ def _add_password(url: str, connection) -> str:
                         Region=connection.authType.awsConfig.awsRegion,
                     )
                 )
+    if not password:
+        logger.warning("No password has been provided in connection")
+        password = SecretStr("")
     url += f":{quote_plus(password.get_secret_value())}"
     return url
 

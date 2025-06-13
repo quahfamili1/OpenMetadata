@@ -12,6 +12,7 @@
  */
 
 import { RightOutlined } from '@ant-design/icons';
+import Icon from '@ant-design/icons/lib/components/Icon';
 import { Typography } from 'antd';
 import { AxiosError } from 'axios';
 import { Operation } from 'fast-json-patch';
@@ -24,7 +25,6 @@ import TurndownService from 'turndown';
 import { ReactComponent as AddIcon } from '../assets/svg/added-icon.svg';
 import { ReactComponent as UpdatedIcon } from '../assets/svg/updated-icon.svg';
 import { MentionSuggestionsItem } from '../components/ActivityFeed/FeedEditor/FeedEditor.interface';
-import { UserTeam } from '../components/common/AssigneeList/AssigneeList.interface';
 import { FQN_SEPARATOR_CHAR } from '../constants/char.constants';
 import {
   EntityField,
@@ -40,6 +40,7 @@ import {
 } from '../constants/Feeds.constants';
 import { EntityType, FqnPart, TabSpecificField } from '../enums/entity.enum';
 import { SearchIndex } from '../enums/search.enum';
+import { OwnerType } from '../enums/user.enum';
 import {
   CardStyle,
   EntityTestResultSummaryObject,
@@ -58,7 +59,6 @@ import {
 } from '../rest/feedsAPI';
 import { searchData } from '../rest/miscAPI';
 import {
-  formTwoDigitNumber,
   getEntityPlaceHolder,
   getPartialNameFromFQN,
   getPartialNameFromTableFQN,
@@ -133,21 +133,12 @@ export const getReplyText = (
     return i18next.t('label.reply-in-conversation');
   }
   if (count === 1) {
-    return `${count} ${
-      singular ? singular : i18next.t('label.older-reply-lowercase')
-    }`;
+    return `${count} ${singular ?? i18next.t('label.older-reply-lowercase')}`;
   }
 
   return `${count} ${
-    plural ? plural : i18next.t('label.older-reply-plural-lowercase')
+    plural ?? i18next.t('label.older-reply-plural-lowercase')
   }`;
-};
-
-export const getThreadField = (
-  value: string,
-  separator = ENTITY_LINK_SEPARATOR
-) => {
-  return value.split(separator).slice(-2);
 };
 
 export const buildMentionLink = (entityType: string, entityFqn: string) => {
@@ -199,7 +190,8 @@ export async function suggestions(
             ENTITY_URL_MAP[entityType as EntityUrlMapType],
             hit._source.name
           ),
-          type: hit._index === SearchIndex.USER ? UserTeam.User : UserTeam.Team,
+          type:
+            hit._index === SearchIndex.USER ? OwnerType.USER : OwnerType.TEAM,
           name: hit._source.name,
           displayName: hit._source.displayName,
         };
@@ -293,15 +285,15 @@ export const userMentionItemWithAvatar = (
   return wrapper;
 };
 
-const getMentionList = (message: string) => {
+export const getMentionList = (message: string) => {
   return message.match(mentionRegEx);
 };
 
-const getHashTagList = (message: string) => {
+export const getHashTagList = (message: string) => {
   return message.match(hashtagRegEx);
 };
 
-const getEntityDetail = (item: string) => {
+export const getEntityDetail = (item: string) => {
   if (item.includes('teams')) {
     return item.match(teamsLinkRegEx);
   }
@@ -310,7 +302,7 @@ const getEntityDetail = (item: string) => {
 };
 
 const getEntityLinkList = (message: string) => {
-  return message.match(entityLinkRegEx);
+  return message?.match(entityLinkRegEx);
 };
 
 const getEntityLinkDetail = (item: string) => {
@@ -560,6 +552,7 @@ export const entityDisplayName = (entityType: string, entityFQN: string) => {
     case EntityType.METADATA_SERVICE:
     case EntityType.STORAGE_SERVICE:
     case EntityType.SEARCH_SERVICE:
+    case EntityType.API_SERVICE:
     case EntityType.TYPE:
       displayName = getPartialNameFromFQN(entityFQN, ['service']);
 
@@ -615,7 +608,7 @@ export const getFeedChangeFieldLabel = (fieldName?: EntityField) => {
     [EntityField.TASKS]: i18next.t('label.task-plural'),
     [EntityField.ML_FEATURES]: i18next.t('label.ml-feature-plural'),
     [EntityField.SCHEMA_TEXT]: i18next.t('label.schema-text'),
-    [EntityField.OWNER]: i18next.t('label.owner'),
+    [EntityField.OWNER]: i18next.t('label.owner-plural'),
     [EntityField.REVIEWERS]: i18next.t('label.reviewer-plural'),
     [EntityField.SYNONYMS]: i18next.t('label.synonym-plural'),
     [EntityField.RELATEDTERMS]: i18next.t('label.related-term-plural'),
@@ -634,27 +627,31 @@ export const getFeedChangeFieldLabel = (fieldName?: EntityField) => {
     [EntityField.MUTUALLY_EXCLUSIVE]: i18next.t('label.mutually-exclusive'),
     [EntityField.EXPERTS]: i18next.t('label.expert-plural'),
     [EntityField.FIELDS]: i18next.t('label.field-plural'),
+    [EntityField.PARAMETER_VALUES]: i18next.t('label.parameter-plural'),
   };
 
   return isUndefined(fieldName) ? '' : fieldNameLabelMapping[fieldName];
 };
 
 export const getFieldOperationIcon = (fieldOperation?: FieldOperation) => {
-  let Icon = UpdatedIcon;
+  let icon;
 
   switch (fieldOperation) {
     case FieldOperation.Added:
-      Icon = AddIcon;
+      icon = AddIcon;
 
       break;
-    case FieldOperation.Updated:
     case FieldOperation.Deleted:
-      Icon = UpdatedIcon;
+      icon = UpdatedIcon;
 
       break;
   }
 
-  return <Icon height={16} width={16} />;
+  return (
+    icon && (
+      <Icon component={icon} height={16} name={fieldOperation} width={16} />
+    )
+  );
 };
 
 export const getTestCaseNameListForResult = (
@@ -679,21 +676,10 @@ export const getTestCaseResultCount = (
     <Typography.Text
       className="font-medium text-md"
       data-testid={`test-${status}-value`}>
-      {formTwoDigitNumber(count)}
+      {count}
     </Typography.Text>
   </div>
 );
-
-export const getTestStatusLabel = (status: TestCaseStatus) => {
-  const statusLabelMapping = {
-    [TestCaseStatus.Success]: i18next.t('label.passed'),
-    [TestCaseStatus.Failed]: i18next.t('label.failed'),
-    [TestCaseStatus.Aborted]: i18next.t('label.aborted'),
-    [TestCaseStatus.Queued]: i18next.t('label.queued'),
-  };
-
-  return statusLabelMapping[status];
-};
 
 export const formatTestStatusData = (
   testResultSummary: Array<EntityTestResultSummaryObject>
@@ -791,7 +777,12 @@ export const getFeedHeaderTextFromCardStyle = (
       return (
         <Transi18next
           i18nKey="message.feed-field-action-entity-header"
-          renderElement={<Typography.Text className="font-bold" />}
+          renderElement={
+            <Typography.Text
+              className="font-bold"
+              style={{ fontSize: '14px' }}
+            />
+          }
           values={{
             field: i18next.t(
               `label.${cardStyle === CardStyle.Tags ? 'tag-plural' : cardStyle}`

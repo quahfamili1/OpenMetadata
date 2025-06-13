@@ -24,37 +24,32 @@ import { CommonEntitySummaryInfoProps } from './CommonEntitySummaryInfo.interfac
 function CommonEntitySummaryInfo({
   entityInfo,
   componentType,
+  isDomainVisible,
 }: CommonEntitySummaryInfoProps) {
   const { t } = useTranslation();
 
   return (
-    <Row gutter={[0, 4]}>
+    <Row className="text-sm" gutter={[0, 4]}>
       {entityInfo.map((info) => {
-        const isOwner = info.name === t('label.owner');
+        const isDomain = isDomainVisible && info.name === t('label.domain');
 
-        return info.visible?.includes(componentType) ? (
+        return info.visible?.includes(componentType) || isDomain ? (
           <Col key={info.name} span={24}>
-            <Row
-              className={classNames('', {
-                'p-b-md': isOwner,
-              })}
-              gutter={[16, 32]}>
-              {!isOwner ? (
-                <Col span={8}>
-                  <Typography.Text
-                    className="summary-item-key text-grey-muted"
-                    data-testid={`${info.name}-label`}>
-                    {info.name}
-                  </Typography.Text>
-                </Col>
-              ) : null}
+            <Row gutter={[16, 32]}>
+              <Col span={8}>
+                <Typography.Text
+                  className="summary-item-key font-semibold"
+                  data-testid={`${info.name}-label`}>
+                  {info.name}
+                </Typography.Text>
+              </Col>
               <Col span={16}>
                 {info.isLink ? (
                   <Link
                     component={Typography.Link}
                     data-testid={`${info.name}-value`}
                     target={info.isExternal ? '_blank' : '_self'}
-                    to={{ pathname: info.url }}>
+                    to={info.linkProps ?? { pathname: info.url }}>
                     {info.value}
                     {info.isExternal ? (
                       <Icon
@@ -67,12 +62,7 @@ function CommonEntitySummaryInfo({
                   </Link>
                 ) : (
                   <Typography.Text
-                    className={classNames(
-                      'summary-item-value text-grey-muted',
-                      {
-                        'text-grey-body': !isOwner,
-                      }
-                    )}
+                    className={classNames('summary-item-value text-grey-body')}
                     data-testid={`${info.name}-value`}>
                     {info.value}
                   </Typography.Text>

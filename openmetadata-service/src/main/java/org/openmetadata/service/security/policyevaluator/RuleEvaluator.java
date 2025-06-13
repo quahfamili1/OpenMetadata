@@ -1,11 +1,14 @@
 package org.openmetadata.service.security.policyevaluator;
 
+import static org.openmetadata.common.utils.CommonUtil.nullOrEmpty;
 import static org.openmetadata.schema.type.Include.NON_DELETED;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.openmetadata.schema.Function;
+import org.openmetadata.schema.type.AssetCertification;
 import org.openmetadata.schema.type.TagLabel;
 import org.openmetadata.service.Entity;
 import org.openmetadata.service.security.policyevaluator.SubjectContext.PolicyContext;
@@ -50,7 +53,7 @@ public class RuleEvaluator {
     if (expressionValidation) {
       return false;
     }
-    return resourceContext != null && resourceContext.getOwner() == null;
+    return resourceContext != null && nullOrEmpty(resourceContext.getOwners());
   }
 
   @Function(
@@ -65,7 +68,27 @@ public class RuleEvaluator {
     if (subjectContext == null || resourceContext == null) {
       return false;
     }
-    return subjectContext.isOwner(resourceContext.getOwner());
+    return subjectContext.isOwner(resourceContext.getOwners());
+  }
+
+  @Function(
+      name = "hasDomain",
+      input = "none",
+      description =
+          "Returns true if the logged in user is the has domain access of the entity being accessed",
+      examples = {"hasDomain()", "!hasDomain()"})
+  public boolean hasDomain() {
+    if (expressionValidation) {
+      return false;
+    }
+    if (subjectContext == null || resourceContext == null) {
+      return false;
+    }
+    // If the Entity belongs to a domain , then user needs to be part of that domain
+    if (!nullOrEmpty(resourceContext.getDomain())) {
+      return subjectContext.hasDomain(resourceContext.getDomain());
+    }
+    return true;
   }
 
   @Function(
@@ -121,18 +144,57 @@ public class RuleEvaluator {
       return false;
     }
     List<TagLabel> tags = resourceContext.getTags();
-    LOG.debug(
-        "matchAnyTag {} resourceTags {}",
-        Arrays.toString(tagFQNs),
-        Arrays.toString(tags.toArray()));
-    for (String tagFQN : tagFQNs) {
-      TagLabel found =
-          tags.stream().filter(t -> t.getTagFQN().equals(tagFQN)).findAny().orElse(null);
-      if (found != null) {
-        return true;
+    if (!nullOrEmpty(tags)) {
+      LOG.debug(
+          "matchAnyTag {} resourceTags {}",
+          Arrays.toString(tagFQNs),
+          Arrays.toString(tags.toArray()));
+      for (String tagFQN : tagFQNs) {
+        TagLabel found =
+            tags.stream().filter(t -> t.getTagFQN().equals(tagFQN)).findAny().orElse(null);
+        if (found != null) {
+          return true;
+        }
       }
     }
     return false;
+  }
+
+  @Function(
+      name = "matchAnyCertification",
+      input = "List of comma separated Certification fully qualified names",
+      description =
+          "Returns true if the entity being accessed has any of the Certification given as input",
+      examples = {"matchAnyCertification('Certification.Silver', 'Certification.Gold')"})
+  @SuppressWarnings("unused") // Used in SpelExpressions
+  public boolean matchAnyCertification(String... tagFQNs) {
+    if (expressionValidation) {
+      for (String tagFqn : tagFQNs) {
+        Entity.getEntityReferenceByName(Entity.TAG, tagFqn, NON_DELETED); // Validate tag exists
+      }
+      return false;
+    }
+    if (resourceContext == null) {
+      return false;
+    }
+
+    Optional<AssetCertification> oCertification =
+        Optional.ofNullable(resourceContext.getEntity().getCertification());
+
+    if (oCertification.isEmpty()) {
+      LOG.debug(
+          "matchAnyCertification {} resourceCertification is null.", Arrays.toString(tagFQNs));
+      return false;
+    } else {
+      AssetCertification certification = oCertification.get();
+
+      LOG.debug(
+          "matchAnyCertification {} resourceCertification {}",
+          Arrays.toString(tagFQNs),
+          certification.getTagLabel().getTagFQN());
+      return Arrays.stream(tagFQNs)
+          .anyMatch(tagFQN -> tagFQN.equals(certification.getTagLabel().getTagFQN()));
+    }
   }
 
   @Function(
@@ -147,13 +209,13 @@ public class RuleEvaluator {
     if (expressionValidation) {
       return false;
     }
-    if (resourceContext == null || resourceContext.getOwner() == null) {
+    if (resourceContext == null || nullOrEmpty(resourceContext.getOwners())) {
       return false; // No ownership information
     }
     if (policyContext == null || !policyContext.getEntityType().equals(Entity.TEAM)) {
       return false; // Policy must be attached to a team for this function to work
     }
-    return subjectContext.isTeamAsset(policyContext.getEntityName(), resourceContext.getOwner())
+    return subjectContext.isTeamAsset(policyContext.getEntityName(), resourceContext.getOwners())
         && subjectContext.isUserUnderTeam(policyContext.getEntityName());
   }
 

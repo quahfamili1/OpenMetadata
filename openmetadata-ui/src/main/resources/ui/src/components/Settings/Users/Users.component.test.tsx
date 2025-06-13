@@ -11,14 +11,7 @@
  *  limitations under the License.
  */
 
-import {
-  findByRole,
-  findByTestId,
-  findByText,
-  queryByTestId,
-  render,
-  screen,
-} from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React, { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
@@ -29,9 +22,16 @@ import Users from './Users.component';
 import { UserPageTabs } from './Users.interface';
 
 const mockParams = {
-  fqn: 'test',
   tab: UserPageTabs.ACTIVITY,
 };
+
+jest.mock('../../../hooks/authHooks', () => ({
+  useAuth: jest.fn().mockReturnValue({ isAdminUser: false }),
+}));
+
+jest.mock('../../../hooks/useFqn', () => ({
+  useFqn: jest.fn().mockReturnValue({ fqn: 'test' }),
+}));
 
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
@@ -45,7 +45,17 @@ jest.mock('../../../rest/rolesAPIV1', () => ({
 jest.mock(
   './UsersProfile/UserProfileDetails/UserProfileDetails.component',
   () => {
-    return jest.fn().mockReturnValue(<div>UserProfileDetails</div>);
+    return jest.fn().mockImplementation((props) => (
+      <div data-testid="user-profile-details">
+        <div>UserProfileDetails</div>
+        <button onClick={props.afterDeleteAction}>
+          AfterDeleteActionButton
+        </button>
+        <button onClick={props.updateUserDetails}>
+          UpdateUserDetailsButton
+        </button>
+      </div>
+    ));
   }
 );
 
@@ -138,14 +148,17 @@ jest.mock('../../PageLayoutV1/PageLayoutV1', () =>
 );
 
 jest.mock('../../common/EntityDescription/DescriptionV1', () => {
-  return jest.fn().mockImplementation(({ onDescriptionUpdate }) => (
-    <div>
-      <span>Description</span>
-      <button onClick={() => onDescriptionUpdate('testDescription')}>
-        SaveDescriptionButton
-      </button>
-    </div>
-  ));
+  return jest
+    .fn()
+    .mockImplementation(({ onDescriptionUpdate, hasEditAccess }) => (
+      <div>
+        <span>Description</span>
+        {hasEditAccess && <span>Edit Button</span>}
+        <button onClick={() => onDescriptionUpdate('testDescription')}>
+          SaveDescriptionButton
+        </button>
+      </div>
+    ));
 });
 
 const mockProp = {
@@ -155,6 +168,7 @@ const mockProp = {
   },
   updateUserDetails: jest.fn(),
   handlePaginate: jest.fn(),
+  afterDeleteAction: jest.fn(),
 };
 
 jest.mock('../../PageLayoutV1/PageLayoutV1', () =>
@@ -167,152 +181,129 @@ jest.mock('../../PageLayoutV1/PageLayoutV1', () =>
   ))
 );
 
+const mockGetResourceLimit = jest.fn().mockResolvedValue({
+  configuredLimit: { disabledFields: [] },
+});
+
+jest.mock('../../../context/LimitsProvider/useLimitsStore', () => ({
+  useLimitStore: jest.fn().mockImplementation(() => ({
+    getResourceLimit: mockGetResourceLimit,
+  })),
+}));
+
+jest.mock('../../ProfileCard/ProfileSectionUserDetailsCard.component', () => {
+  return jest.fn().mockImplementation((props) => (
+    <div data-testid="profile-section-card">
+      <div>ProfileSectionUserDetailsCard</div>
+      <button onClick={props.afterDeleteAction}>AfterDeleteActionButton</button>
+      <button onClick={props.updateUserDetails}>UpdateUserDetailsButton</button>
+    </div>
+  ));
+});
+
 describe('Test User Component', () => {
   it('Should render user component', async () => {
-    const { container } = render(
-      <Users userData={mockUserData} {...mockProp} />,
-      {
+    await act(async () => {
+      render(<Users userData={mockUserData} {...mockProp} />, {
         wrapper: MemoryRouter,
-      }
-    );
+      });
+    });
 
-    const UserProfileDetails = await findByText(
-      container,
-      'UserProfileDetails'
-    );
+    const profileSection = await screen.findByTestId('profile-section-card');
 
-    expect(UserProfileDetails).toBeInTheDocument();
+    expect(profileSection).toBeInTheDocument();
   });
 
-  it('User profile should render when open collapsible header', async () => {
-    const { container } = render(
-      <Users userData={mockUserData} {...mockProp} />,
-      {
+  it('should trigger afterDeleteAction from UserProfileDetails', async () => {
+    await act(async () => {
+      render(<Users userData={mockUserData} {...mockProp} />, {
         wrapper: MemoryRouter,
-      }
-    );
+      });
+    });
 
-    const collapsibleButton = await findByRole(container, 'img');
+    await act(async () => {
+      userEvent.click(screen.getByText('AfterDeleteActionButton'));
+    });
 
-    userEvent.click(collapsibleButton);
+    expect(mockProp.afterDeleteAction).toHaveBeenCalled();
+  });
 
-    const UserProfileInheritedRoles = await findByText(
-      container,
-      'UserProfileInheritedRoles'
-    );
-    const UserProfileRoles = await findByText(container, 'UserProfileRoles');
-    const UserProfileTeams = await findByText(container, 'UserProfileTeams');
-    const description = await findByText(container, 'Description');
+  it('should trigger updateUserDetails from UserProfileDetails', async () => {
+    await act(async () => {
+      render(<Users userData={mockUserData} {...mockProp} />, {
+        wrapper: MemoryRouter,
+      });
+    });
 
-    expect(description).toBeInTheDocument();
+    await act(async () => {
+      userEvent.click(screen.getByText('UpdateUserDetailsButton'));
+    });
+
+    expect(mockProp.updateUserDetails).toHaveBeenCalled();
+  });
+
+  it('User profile should render Persona, Teams and Domains and Roles', async () => {
+    await act(async () => {
+      render(<Users userData={mockUserData} {...mockProp} />, {
+        wrapper: MemoryRouter,
+      });
+    });
+
+    const UserProfileRoles = await screen.findByText('UserProfileRoles');
+    const UserProfileTeams = await screen.findByText('UserProfileTeams');
+
     expect(UserProfileRoles).toBeInTheDocument();
     expect(UserProfileTeams).toBeInTheDocument();
-    expect(UserProfileInheritedRoles).toBeInTheDocument();
-  });
-
-  it('should call updateUserDetails on click of SaveDescriptionButton', async () => {
-    const { container } = render(
-      <Users userData={mockUserData} {...mockProp} />,
-      {
-        wrapper: MemoryRouter,
-      }
-    );
-
-    const collapsibleButton = await findByRole(container, 'img');
-
-    userEvent.click(collapsibleButton);
-
-    const saveDescriptionButton = await findByText(
-      container,
-      'SaveDescriptionButton'
-    );
-
-    userEvent.click(saveDescriptionButton);
-
-    expect(mockProp.updateUserDetails).toHaveBeenCalledWith(
-      {
-        description: 'testDescription',
-      },
-      'description'
-    );
-  });
-
-  it('should call updateUserDetails on click of SavePersonaSelectableListButton', async () => {
-    const { container } = render(
-      <Users userData={mockUserData} {...mockProp} />,
-      {
-        wrapper: MemoryRouter,
-      }
-    );
-
-    const collapsibleButton = await findByRole(container, 'img');
-
-    userEvent.click(collapsibleButton);
-
-    const savePersonaSelectableListButton = await findByText(
-      container,
-      'SavePersonaSelectableListButton'
-    );
-
-    userEvent.click(savePersonaSelectableListButton);
-
-    expect(mockProp.updateUserDetails).toHaveBeenCalledWith(
-      {
-        personas: [],
-      },
-      'personas'
-    );
   });
 
   it('Tab should not visible to normal user', async () => {
-    const { container } = render(
-      <Users userData={mockUserData} {...mockProp} />,
-      {
+    await act(async () => {
+      render(<Users userData={mockUserData} {...mockProp} />, {
         wrapper: MemoryRouter,
-      }
-    );
+      });
+    });
 
-    const tabs = queryByTestId(container, 'tab');
+    const tabs = screen.queryByTestId('tab');
 
     expect(tabs).not.toBeInTheDocument();
   });
 
   it('Should check if cards are rendered', async () => {
     mockParams.tab = UserPageTabs.MY_DATA;
-    const { container } = render(
-      <Users userData={mockUserData} {...mockProp} />,
-      {
-        wrapper: MemoryRouter,
-      }
-    );
 
-    const datasetContainer = await findByTestId(container, 'user-profile');
+    await act(async () => {
+      render(<Users userData={mockUserData} {...mockProp} />, {
+        wrapper: MemoryRouter,
+      });
+    });
+
+    const datasetContainer = await screen.findByTestId('user-profile');
 
     expect(datasetContainer).toBeInTheDocument();
   });
 
   it('MyData tab should load asset component', async () => {
     mockParams.tab = UserPageTabs.MY_DATA;
-    const { container } = render(
-      <Users userData={mockUserData} {...mockProp} />,
-      {
+
+    await act(async () => {
+      render(<Users userData={mockUserData} {...mockProp} />, {
         wrapper: MemoryRouter,
-      }
-    );
-    const assetComponent = await findByText(container, 'AssetsTabs');
+      });
+    });
+    const assetComponent = await screen.findByText('AssetsTabs');
 
     expect(assetComponent).toBeInTheDocument();
   });
 
   it('Following tab should show load asset component', async () => {
     mockParams.tab = UserPageTabs.FOLLOWING;
-    const { container } = render(
-      <Users userData={mockUserData} {...mockProp} />,
-      {
+
+    await act(async () => {
+      render(<Users userData={mockUserData} {...mockProp} />, {
         wrapper: MemoryRouter,
-      }
-    );
-    const assetComponent = await findByText(container, 'AssetsTabs');
+      });
+    });
+    const assetComponent = await screen.findByText('AssetsTabs');
 
     expect(assetComponent).toBeInTheDocument();
   });
@@ -326,18 +317,44 @@ describe('Test User Component', () => {
       })
     );
     mockParams.tab = UserPageTabs.ACCESS_TOKEN;
-    render(
-      <Users
-        authenticationMechanism={mockAccessData}
-        userData={mockUserData}
-        {...mockProp}
-      />,
-      {
-        wrapper: MemoryRouter,
-      }
-    );
+
+    await act(async () => {
+      render(
+        <Users
+          authenticationMechanism={mockAccessData}
+          userData={mockUserData}
+          {...mockProp}
+        />,
+        {
+          wrapper: MemoryRouter,
+        }
+      );
+    });
     const assetComponent = await screen.findByTestId('center-panel');
 
     expect(assetComponent).toBeInTheDocument();
+  });
+
+  it('should disable access token tab, if limit has personalAccessToken as disabledFields', async () => {
+    mockGetResourceLimit.mockResolvedValueOnce({
+      configuredLimit: { disabledFields: ['personalAccessToken'] },
+    });
+
+    await act(async () => {
+      render(
+        <Users
+          authenticationMechanism={mockAccessData}
+          userData={mockUserData}
+          {...mockProp}
+        />,
+        {
+          wrapper: MemoryRouter,
+        }
+      );
+    });
+
+    expect(
+      (await screen.findByTestId('access-token'))?.closest('.ant-tabs-tab')
+    ).toHaveClass('ant-tabs-tab-disabled');
   });
 });

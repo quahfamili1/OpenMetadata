@@ -11,6 +11,7 @@
  *  limitations under the License.
  */
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { SearchIndex } from '../../../enums/search.enum';
 import { searchQuery } from '../../../rest/searchAPI';
@@ -98,12 +99,21 @@ const mockSearchAPIResponse = {
     },
   },
 };
+const mockLocationPathname = '/mock-path';
+
+jest.mock('react-router-dom', () => ({
+  useHistory: jest.fn().mockImplementation(() => ({
+    history: {
+      push: jest.fn(),
+    },
+    replace: jest.fn(),
+  })),
+  useLocation: jest.fn().mockImplementation(() => ({
+    pathname: mockLocationPathname,
+  })),
+}));
 
 describe('DataAssetAsyncSelectList', () => {
-  function toggleOpen(container: ReturnType<typeof render>['container']): void {
-    fireEvent.mouseDown(container.querySelector('.ant-select-selector'));
-  }
-
   it('should render without crashing', async () => {
     await act(async () => {
       render(<DataAssetAsyncSelectList />);
@@ -120,7 +130,8 @@ describe('DataAssetAsyncSelectList', () => {
     const { container } = render(<DataAssetAsyncSelectList />);
 
     await act(async () => {
-      toggleOpen(container);
+      const inputBox = container.querySelector('.ant-select-selector');
+      inputBox && userEvent.click(inputBox);
     });
 
     expect(searchQuery).toHaveBeenCalledTimes(1);
@@ -144,7 +155,8 @@ describe('DataAssetAsyncSelectList', () => {
     );
 
     await act(async () => {
-      toggleOpen(container);
+      const inputBox = container.querySelector('.ant-select-selector');
+      inputBox && userEvent.click(inputBox);
     });
 
     expect(searchQuery).toHaveBeenCalledTimes(1);
@@ -180,7 +192,8 @@ describe('DataAssetAsyncSelectList', () => {
     );
 
     await act(async () => {
-      toggleOpen(container);
+      const inputBox = container.querySelector('.ant-select-selector');
+      inputBox && userEvent.click(inputBox);
     });
 
     expect(searchQuery).toHaveBeenCalledTimes(1);
@@ -196,7 +209,7 @@ describe('DataAssetAsyncSelectList', () => {
     const option = screen.getByTestId('option-test-1');
 
     await act(async () => {
-      fireEvent.click(option);
+      userEvent.click(option);
     });
 
     expect(mockOnChange).toHaveBeenCalledWith(mockOptions);
@@ -284,7 +297,8 @@ describe('DataAssetAsyncSelectList', () => {
     );
 
     await act(async () => {
-      toggleOpen(container);
+      const inputBox = container.querySelector('.ant-select-selector');
+      inputBox && userEvent.click(inputBox);
     });
 
     expect(searchQuery).toHaveBeenCalledTimes(1);

@@ -22,13 +22,13 @@ import {
   BETA_SERVICES,
   excludedService,
   SERVICE_CATEGORY_OPTIONS,
+  SERVICE_TYPE_WITH_DISPLAY_NAME,
 } from '../../../../../constants/Services.constant';
 import { ServiceCategory } from '../../../../../enums/service.enum';
 import { DatabaseServiceType } from '../../../../../generated/entity/data/database';
 import { MetadataServiceType } from '../../../../../generated/entity/services/metadataService';
 import { MlModelServiceType } from '../../../../../generated/entity/services/mlmodelService';
 import { PipelineServiceType } from '../../../../../generated/entity/services/pipelineService';
-import { useApplicationStore } from '../../../../../hooks/useApplicationStore';
 import { errorMsg, getServiceLogo } from '../../../../../utils/CommonUtils';
 import ServiceUtilClassBase from '../../../../../utils/ServiceUtilClassBase';
 import Searchbar from '../../../../common/SearchBarComponent/SearchBar.component';
@@ -44,7 +44,6 @@ const SelectServiceType = ({
   onCancel,
   onNext,
 }: SelectServiceTypeProps) => {
-  const { theme } = useApplicationStore();
   const { t } = useTranslation();
   const [category, setCategory] = useState('');
   const [connectorSearchTerm, setConnectorSearchTerm] = useState('');
@@ -87,11 +86,9 @@ const SelectServiceType = ({
   const getServiceName = (type: string) => {
     if (type.includes('Custom')) {
       return startCase(type);
-    } else if (type === PipelineServiceType.GluePipeline) {
-      return 'Glue Pipeline';
     }
 
-    return type;
+    return SERVICE_TYPE_WITH_DISPLAY_NAME.get(type) || type;
   };
 
   return (
@@ -123,8 +120,8 @@ const SelectServiceType = ({
         <Row className="service-list-container" data-testid="select-service">
           {filteredConnectors.map((type) => (
             <Button
-              className={classNames('service-box p-xs d-block border', {
-                'border-primary': type === selectServiceType,
+              className={classNames('service-box', {
+                'selected-service': type === selectServiceType,
               })}
               data-testid={type}
               key={type}
@@ -146,11 +143,7 @@ const SelectServiceType = ({
                 {BETA_SERVICES.includes(
                   type as DatabaseServiceType | PipelineServiceType
                 ) ? (
-                  <Badge
-                    className="service-beta-tag"
-                    color={theme.primaryColor}
-                    count={t('label.beta')}
-                  />
+                  <Badge className="service-beta-tag" count={t('label.beta')} />
                 ) : null}
               </p>
             </Button>

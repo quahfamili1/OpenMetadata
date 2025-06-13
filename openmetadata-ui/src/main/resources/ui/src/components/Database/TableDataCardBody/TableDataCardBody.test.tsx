@@ -16,9 +16,14 @@ import React from 'react';
 import { TAG_CONSTANT } from '../../../constants/Tag.constants';
 import TableDataCardBody from './TableDataCardBody';
 
-jest.mock('../../common/RichTextEditor/RichTextEditorPreviewer', () => {
+jest.mock('../../common/RichTextEditor/RichTextEditorPreviewerV1', () => {
   return jest.fn().mockReturnValue(<p>RichTextEditorPreviewer</p>);
 });
+
+jest.mock('../../Tag/TagsViewer/TagsViewer', () => {
+  return jest.fn().mockReturnValue(<p>TagsViewer</p>);
+});
+
 jest.mock('../../common/EntitySummaryDetails/EntitySummaryDetails', () => {
   return jest
     .fn()

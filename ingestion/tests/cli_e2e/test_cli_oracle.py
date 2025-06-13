@@ -1,8 +1,8 @@
 #  Copyright 2022 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,6 +14,8 @@ Oracle E2E tests
 """
 
 from typing import List
+
+import pytest
 
 from metadata.ingestion.api.status import Status
 
@@ -46,14 +48,19 @@ class OracleCliTest(CliCommonDB.TestSuite, SQACommonMethods):
 
     insert_data_queries: List[str] = [
         """
-        INSERT INTO admin.admin_emp (empno, ename, ssn, job, mgr, sal, comm, comments, status) WITH names AS (
-SELECT 1, 'John Doe', 12356789, 'Manager', 121, 5200.0, 5000.0, 'Amazing', 'Active' FROM dual UNION ALL
-SELECT 2, 'Jane Doe', 123467189, 'Clerk', 131, 503.0, 5000.0, 'Wow', 'Active' FROM dual UNION ALL
-SELECT 3, 'Jon Doe', 123562789, 'Assistant', 141, 5000.0, 5000.0, 'Nice', 'Active' FROM dual UNION ALL
-SELECT 4, 'Jon Doe', 13456789, 'Manager', 151, 5050.0, 5000.0, 'Excellent', 'Active' FROM dual
+        INSERT INTO admin.admin_emp (empno, ename, ssn, job, mgr, sal, comm, comments, status, photo) WITH names AS (
+SELECT 1, 'John Doe', 12356789, 'Manager', 121, 5200.0, 5000.0, 'Amazing', 'Active', EMPTY_BLOB() FROM dual UNION ALL
+SELECT 2, 'Jane Doe', 123467189, 'Clerk', 131, 503.0, 5000.0, 'Wow', 'Active', EMPTY_BLOB() FROM dual UNION ALL
+SELECT 3, 'Jon Doe', 123562789, 'Assistant', 141, 5000.0, 5000.0, 'Nice', 'Active', EMPTY_BLOB() FROM dual
 )
 SELECT * from names
-"""
+""",
+        """
+INSERT INTO admin.admin_emp (empno, ename, ssn, job, mgr, sal, comm, comments, status, photo) WITH names AS (
+SELECT 4, 'Jon Doe', 13456789, 'Manager', 151, 5050.0, 5000.0, 'Excellent', 'Active',  UTL_RAW.CAST_TO_RAW('your_binary_data') FROM dual
+)
+SELECT * from names
+""",
     ]
 
     drop_table_query: str = """
@@ -82,9 +89,13 @@ SELECT * from names
 
     @staticmethod
     def expected_tables() -> int:
-        return 14
+        return 13
 
-    def inserted_rows_count(self) -> int:
+    @staticmethod
+    def expected_profiled_tables() -> int:
+        return 16
+
+    def expected_sample_size(self) -> int:
         # For the admin_emp table
         return 4
 
@@ -93,6 +104,9 @@ SELECT * from names
         which does not propagate column lineage
         """
         return 12
+
+    def expected_lineage_node(self) -> str:
+        return "e2e_oracle.default.admin.admin_emp_view"
 
     @staticmethod
     def fqn_created_table() -> str:
@@ -128,12 +142,13 @@ SELECT * from names
 
     @staticmethod
     def expected_filtered_table_excludes() -> int:
-        return 29
+        return 30
 
     @staticmethod
     def expected_filtered_mix() -> int:
         return 43
 
+    @pytest.mark.order(2)
     def test_create_table_with_profiler(self) -> None:
         # delete table in case it exists
         self.delete_table_and_view()
@@ -157,6 +172,7 @@ SELECT * from names
         sink_status, source_status = self.retrieve_statuses(result)
         self.assert_for_table_with_profiler(source_status, sink_status)
 
+    @pytest.mark.order(4)
     def test_delete_table_is_marked_as_deleted(self) -> None:
         """3. delete the new table + deploy marking tables as deleted
 
@@ -175,6 +191,7 @@ SELECT * from names
         sink_status, source_status = self.retrieve_statuses(result)
         self.assert_for_delete_table_is_marked_as_deleted(source_status, sink_status)
 
+    @pytest.mark.order(5)
     def test_schema_filter_includes(self) -> None:
         self.build_config_file(
             E2EType.INGEST_DB_FILTER_MIX,
@@ -190,9 +207,11 @@ SELECT * from names
         sink_status, source_status = self.retrieve_statuses(result)
         self.assert_filtered_tables_includes(source_status, sink_status)
 
+    @pytest.mark.order(6)
     def test_schema_filter_excludes(self) -> None:
         pass
 
+    @pytest.mark.order(7)
     def test_table_filter_includes(self) -> None:
         """6. Vanilla ingestion + include table filter pattern
 
@@ -212,6 +231,7 @@ SELECT * from names
         sink_status, source_status = self.retrieve_statuses(result)
         self.assert_filtered_tables_includes(source_status, sink_status)
 
+    @pytest.mark.order(1)
     def test_vanilla_ingestion(self) -> None:
         """6. Vanilla ingestion
 
@@ -228,6 +248,7 @@ SELECT * from names
         sink_status, source_status = self.retrieve_statuses(result)
         self.assert_for_vanilla_ingestion(source_status, sink_status)
 
+    @pytest.mark.order(8)
     def test_table_filter_excludes(self) -> None:
         """7. Vanilla ingestion + exclude table filter pattern
 
@@ -240,7 +261,7 @@ SELECT * from names
             E2EType.INGEST_DB_FILTER_MIX,
             {
                 "schema": {"includes": self.get_includes_schemas()},
-                "table": {"excludes": self.get_includes_tables()},
+                "table": {"excludes": self.get_excludes_tables()},
             },
         )
 

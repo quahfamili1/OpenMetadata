@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -227,14 +227,14 @@ class TestLkmlParser(TestCase):
         cols = get_columns_from_model(explore)
         expected_cols = [
             Column(
-                name=ColumnName(__root__="dim1"),
+                name=ColumnName("dim1"),
                 displayName="Dim 1 Label",
                 dataType=DataType.BOOLEAN,
                 dataTypeDisplay="yesno",
                 description=None,
             ),
             Column(
-                name=ColumnName(__root__="dim2"),
+                name=ColumnName("dim2"),
                 displayName="Dim 2 Label Short",
                 dataType=DataType.ARRAY,
                 arrayDataType=DataType.UNKNOWN,
@@ -242,7 +242,7 @@ class TestLkmlParser(TestCase):
                 description="something",
             ),
             Column(
-                name=ColumnName(__root__="measure1"),
+                name=ColumnName("measure1"),
                 displayName=None,
                 dataType=DataType.STRING,
                 dataTypeDisplay="duration_day",
@@ -267,12 +267,12 @@ class TestLkmlParser(TestCase):
         cols = get_columns_from_model(view)
         expected_cols = [
             Column(
-                name=ColumnName(__root__="name"),
+                name=ColumnName("name"),
                 dataType=DataType.STRING,
                 dataTypeDisplay="string",
             ),
             Column(
-                name=ColumnName(__root__="age"),
+                name=ColumnName("age"),
                 dataType=DataType.NUMBER,
                 dataTypeDisplay="int",
             ),

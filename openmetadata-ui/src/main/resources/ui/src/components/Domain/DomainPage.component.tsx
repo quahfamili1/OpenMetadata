@@ -14,58 +14,94 @@
 import { AxiosError } from 'axios';
 import { compare } from 'fast-json-patch';
 import { isEmpty } from 'lodash';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHistory } from 'react-router-dom';
 import ErrorPlaceHolder from '../../components/common/ErrorWithPlaceholder/ErrorPlaceHolder';
-import PageLayoutV1 from '../../components/PageLayoutV1/PageLayoutV1';
-import { ROUTES } from '../../constants/constants';
+import { ES_MAX_PAGE_SIZE, ROUTES } from '../../constants/constants';
 import { usePermissionProvider } from '../../context/PermissionProvider/PermissionProvider';
 import { ResourceEntity } from '../../context/PermissionProvider/PermissionProvider.interface';
-import { ERROR_PLACEHOLDER_TYPE } from '../../enums/common.enum';
+import { ERROR_PLACEHOLDER_TYPE, SIZE } from '../../enums/common.enum';
+import { TabSpecificField } from '../../enums/entity.enum';
 import { Domain } from '../../generated/entity/domains/domain';
 import { Operation } from '../../generated/entity/policies/policy';
+import { withPageLayout } from '../../hoc/withPageLayout';
+import { useApplicationStore } from '../../hooks/useApplicationStore';
 import { useDomainStore } from '../../hooks/useDomainStore';
 import { useFqn } from '../../hooks/useFqn';
-import { getDomainByName, patchDomains } from '../../rest/domainAPI';
+import {
+  addFollower,
+  getDomainByName,
+  getDomainList,
+  patchDomains,
+  removeFollower,
+} from '../../rest/domainAPI';
+import { getEntityName } from '../../utils/EntityUtils';
+import i18n from '../../utils/i18next/LocalUtil';
 import { checkPermission } from '../../utils/PermissionsUtils';
 import { getDomainPath } from '../../utils/RouterUtils';
 import { showErrorToast } from '../../utils/ToastUtils';
 import Loader from '../common/Loader/Loader';
+import ResizableLeftPanels from '../common/ResizablePanels/ResizableLeftPanels';
 import './domain.less';
 import DomainDetailsPage from './DomainDetailsPage/DomainDetailsPage.component';
 import DomainsLeftPanel from './DomainLeftPanel/DomainLeftPanel.component';
 
 const DomainPage = () => {
-  const { t } = useTranslation();
   const { fqn: domainFqn } = useFqn();
+  const { t } = useTranslation();
   const history = useHistory();
+  const { currentUser } = useApplicationStore();
+  const currentUserId = currentUser?.id ?? '';
   const { permissions } = usePermissionProvider();
-  const { domains, refreshDomains, updateDomains, domainLoading } =
+  const { domains, updateDomains, domainLoading, updateDomainLoading } =
     useDomainStore();
-  const [isMainContentLoading, setIsMainContentLoading] = useState(true);
+  const [isMainContentLoading, setIsMainContentLoading] = useState(false);
   const [activeDomain, setActiveDomain] = useState<Domain>();
+  const [isFollowingLoading, setIsFollowingLoading] = useState<boolean>(false);
 
-  const createDomainPermission = useMemo(
-    () => checkPermission(Operation.Create, ResourceEntity.DOMAIN, permissions),
-    [permissions]
-  );
+  const { isFollowing } = useMemo(() => {
+    return {
+      isFollowing: activeDomain?.followers?.some(
+        ({ id }) => id === currentUserId
+      ),
+    };
+  }, [activeDomain?.followers, currentUserId]);
 
-  const viewBasicDomainPermission = useMemo(
-    () =>
+  const rootDomains = useMemo(() => {
+    return domains.filter((domain) => domain.parent == null);
+  }, [domains]);
+
+  const refreshDomains = useCallback(async () => {
+    try {
+      updateDomainLoading(true);
+      const { data } = await getDomainList({
+        limit: ES_MAX_PAGE_SIZE,
+        fields: 'parent',
+      });
+      updateDomains(data);
+    } catch {
+      // silent fail
+    } finally {
+      updateDomainLoading(false);
+    }
+  }, []);
+
+  const [
+    createDomainPermission,
+    viewBasicDomainPermission,
+    viewAllDomainPermission,
+  ] = useMemo(() => {
+    return [
+      checkPermission(Operation.Create, ResourceEntity.DOMAIN, permissions),
       checkPermission(Operation.ViewBasic, ResourceEntity.DOMAIN, permissions),
-    [permissions]
-  );
-
-  const viewAllDomainPermission = useMemo(
-    () =>
       checkPermission(Operation.ViewAll, ResourceEntity.DOMAIN, permissions),
-    [permissions]
-  );
+    ];
+  }, [permissions]);
 
-  const handleAddDomainClick = () => {
+  const handleAddDomainClick = useCallback(() => {
     history.push(ROUTES.ADD_DOMAIN);
-  };
+  }, [history]);
 
   const handleDomainUpdate = async (updatedData: Domain) => {
     if (activeDomain) {
@@ -75,7 +111,7 @@ const DomainPage = () => {
 
         setActiveDomain(response);
 
-        const updatedDomains = domains.map((item) => {
+        const updatedDomains = rootDomains.map((item) => {
           if (item.name === response.name) {
             return response;
           } else {
@@ -83,7 +119,7 @@ const DomainPage = () => {
           }
         });
 
-        updateDomains(updatedDomains);
+        updateDomains(updatedDomains, false);
 
         if (activeDomain?.name !== updatedData.name) {
           history.push(getDomainPath(response.fullyQualifiedName));
@@ -96,7 +132,7 @@ const DomainPage = () => {
   };
 
   const handleDomainDelete = (id: string) => {
-    const updatedDomains = domains.find((item) => item.id !== id);
+    const updatedDomains = rootDomains.find((item) => item.id !== id);
     const domainPath = updatedDomains
       ? getDomainPath(updatedDomains.fullyQualifiedName)
       : getDomainPath();
@@ -109,15 +145,86 @@ const DomainPage = () => {
     setIsMainContentLoading(true);
     try {
       const data = await getDomainByName(domainFqn, {
-        fields: 'children,owner,parent,experts',
+        fields: [
+          TabSpecificField.CHILDREN,
+          TabSpecificField.OWNERS,
+          TabSpecificField.PARENT,
+          TabSpecificField.EXPERTS,
+          TabSpecificField.TAGS,
+          TabSpecificField.FOLLOWERS,
+        ],
       });
       setActiveDomain(data);
     } catch (error) {
-      showErrorToast(error as AxiosError);
+      showErrorToast(
+        error as AxiosError,
+        t('server.entity-fetch-error', {
+          entity: t('label.domain-lowercase'),
+        })
+      );
     } finally {
       setIsMainContentLoading(false);
     }
   };
+
+  const followDomain = async () => {
+    try {
+      if (!activeDomain?.id) {
+        return;
+      }
+      const res = await addFollower(activeDomain.id, currentUserId);
+      const { newValue } = res.changeDescription.fieldsAdded[0];
+      setActiveDomain(
+        (prev) =>
+          ({
+            ...prev,
+            followers: [...(prev?.followers ?? []), ...newValue],
+          } as Domain)
+      );
+    } catch (error) {
+      showErrorToast(
+        error as AxiosError,
+        t('server.entity-follow-error', {
+          entity: getEntityName(activeDomain),
+        })
+      );
+    }
+  };
+
+  const unFollowDomain = async () => {
+    try {
+      if (!activeDomain?.id) {
+        return;
+      }
+      const res = await removeFollower(activeDomain.id, currentUserId);
+      const { oldValue } = res.changeDescription.fieldsDeleted[0];
+
+      const filteredFollowers = activeDomain.followers?.filter(
+        (follower) => follower.id !== oldValue[0].id
+      );
+
+      setActiveDomain(
+        (prev) =>
+          ({
+            ...prev,
+            followers: filteredFollowers ?? [],
+          } as Domain)
+      );
+    } catch (error) {
+      showErrorToast(
+        error as AxiosError,
+        t('server.entity-unfollow-error', {
+          entity: getEntityName(activeDomain),
+        })
+      );
+    }
+  };
+
+  const handleFollowingClick = useCallback(async () => {
+    setIsFollowingLoading(true);
+    isFollowing ? await unFollowDomain() : await followDomain();
+    setIsFollowingLoading(false);
+  }, [isFollowing, unFollowDomain, followDomain]);
 
   const domainPageRender = useMemo(() => {
     if (isMainContentLoading) {
@@ -128,6 +235,9 @@ const DomainPage = () => {
       return (
         <DomainDetailsPage
           domain={activeDomain}
+          handleFollowingClick={handleFollowingClick}
+          isFollowing={isFollowing}
+          isFollowingLoading={isFollowingLoading}
           onDelete={handleDomainDelete}
           onUpdate={handleDomainUpdate}
         />
@@ -138,19 +248,22 @@ const DomainPage = () => {
     activeDomain,
     handleDomainUpdate,
     handleDomainDelete,
+    isFollowing,
+    isFollowingLoading,
+    handleFollowingClick,
   ]);
 
   useEffect(() => {
-    if (domainFqn && domains.length > 0) {
+    if (domainFqn) {
       fetchDomainByName(domainFqn);
     }
-  }, [domainFqn, domains]);
+  }, [domainFqn]);
 
   useEffect(() => {
-    if (domains.length > 0 && !domainFqn && !domainLoading) {
-      history.push(getDomainPath(domains[0].fullyQualifiedName));
+    if (rootDomains.length > 0 && !domainFqn && !domainLoading) {
+      history.push(getDomainPath(rootDomains[0].fullyQualifiedName));
     }
-  }, [domains, domainFqn]);
+  }, [rootDomains, domainFqn]);
 
   if (domainLoading) {
     return <Loader />;
@@ -158,39 +271,66 @@ const DomainPage = () => {
 
   if (!(viewBasicDomainPermission || viewAllDomainPermission)) {
     return (
-      <ErrorPlaceHolder
-        className="mt-0-important"
-        type={ERROR_PLACEHOLDER_TYPE.PERMISSION}
-      />
+      <div className="d-flex justify-center items-center full-height">
+        <ErrorPlaceHolder
+          className="mt-0-important border-none"
+          permissionValue={t('label.view-entity', {
+            entity: t('label.domain'),
+          })}
+          size={SIZE.X_LARGE}
+          type={ERROR_PLACEHOLDER_TYPE.PERMISSION}
+        />
+      </div>
     );
   }
 
-  if (isEmpty(domains)) {
+  if (isEmpty(rootDomains)) {
     return (
-      <ErrorPlaceHolder
-        buttonId="add-domain"
-        className="mt-0-important"
-        heading={t('label.domain')}
-        permission={createDomainPermission}
-        type={
-          createDomainPermission
-            ? ERROR_PLACEHOLDER_TYPE.CREATE
-            : ERROR_PLACEHOLDER_TYPE.CUSTOM
-        }
-        onClick={handleAddDomainClick}>
-        {t('message.domains-not-configured')}
-      </ErrorPlaceHolder>
+      <div className="d-flex justify-center items-center full-height">
+        <ErrorPlaceHolder
+          buttonId="add-domain"
+          className="mt-0-important border-none"
+          heading={t('label.domain')}
+          permission={createDomainPermission}
+          permissionValue={
+            createDomainPermission
+              ? t('label.create-entity', {
+                  entity: t('label.domain'),
+                })
+              : ''
+          }
+          size={SIZE.X_LARGE}
+          type={
+            createDomainPermission
+              ? ERROR_PLACEHOLDER_TYPE.CREATE
+              : ERROR_PLACEHOLDER_TYPE.CUSTOM
+          }
+          onClick={handleAddDomainClick}>
+          {t('message.domains-not-configured')}
+        </ErrorPlaceHolder>
+      </div>
     );
   }
 
   return (
-    <PageLayoutV1
-      className="domain-parent-page-layout"
-      leftPanel={<DomainsLeftPanel domains={domains} />}
-      pageTitle={t('label.domain')}>
-      {domainPageRender}
-    </PageLayoutV1>
+    <ResizableLeftPanels
+      className="content-height-with-resizable-panel"
+      firstPanel={{
+        className: 'content-resizable-panel-container',
+        minWidth: 280,
+        flex: 0.13,
+        title: t('label.domain-plural'),
+        children: <DomainsLeftPanel domains={rootDomains} />,
+      }}
+      pageTitle={t('label.domain')}
+      secondPanel={{
+        children: domainPageRender,
+        className: 'content-resizable-panel-container',
+        minWidth: 800,
+        flex: 0.87,
+      }}
+    />
   );
 };
 
-export default DomainPage;
+export default withPageLayout(i18n.t('label.domain'))(DomainPage);

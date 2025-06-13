@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -12,7 +12,7 @@
 Iceberg source methods.
 """
 import traceback
-from typing import Any, Iterable, Optional, Tuple, Union
+from typing import Any, Iterable, Optional, Tuple
 
 import pyiceberg
 import pyiceberg.exceptions
@@ -21,12 +21,10 @@ from metadata.generated.schema.api.data.createDatabase import CreateDatabaseRequ
 from metadata.generated.schema.api.data.createDatabaseSchema import (
     CreateDatabaseSchemaRequest,
 )
-from metadata.generated.schema.api.data.createQuery import CreateQueryRequest
 from metadata.generated.schema.api.data.createStoredProcedure import (
     CreateStoredProcedureRequest,
 )
 from metadata.generated.schema.api.data.createTable import CreateTableRequest
-from metadata.generated.schema.api.lineage.addLineage import AddLineageRequest
 from metadata.generated.schema.entity.data.database import Database
 from metadata.generated.schema.entity.data.databaseSchema import DatabaseSchema
 from metadata.generated.schema.entity.data.table import Table, TableType
@@ -42,7 +40,8 @@ from metadata.generated.schema.metadataIngestion.databaseServiceMetadataPipeline
 from metadata.generated.schema.metadataIngestion.workflow import (
     Source as WorkflowSource,
 )
-from metadata.generated.schema.type.entityReference import EntityReference
+from metadata.generated.schema.type.basic import EntityName, FullyQualifiedEntityName
+from metadata.generated.schema.type.entityReferenceList import EntityReferenceList
 from metadata.ingestion.api.models import Either
 from metadata.ingestion.api.steps import InvalidSourceException
 from metadata.ingestion.models.ometa_classification import OMetaTagAndClassification
@@ -75,7 +74,7 @@ class IcebergSource(DatabaseServiceSource):
             self.config.sourceConfig.config
         )
         self.metadata = metadata
-        self.service_connection = self.config.serviceConnection.__root__.config
+        self.service_connection = self.config.serviceConnection.root.config
         self.iceberg = get_connection(self.service_connection)
 
         self.connection_obj = self.iceberg
@@ -85,8 +84,8 @@ class IcebergSource(DatabaseServiceSource):
     def create(
         cls, config_dict, metadata: OpenMetadata, pipeline_name: Optional[str] = None
     ):
-        config: WorkflowSource = WorkflowSource.parse_obj(config_dict)
-        connection: IcebergConnection = config.serviceConnection.__root__.config
+        config: WorkflowSource = WorkflowSource.model_validate(config_dict)
+        connection: IcebergConnection = config.serviceConnection.root.config
         if not isinstance(connection, IcebergConnection):
             raise InvalidSourceException(
                 f"Expected GlueConnection, but got {connection}"
@@ -158,12 +157,14 @@ class IcebergSource(DatabaseServiceSource):
         """
         yield Either(
             right=CreateDatabaseSchemaRequest(
-                name=schema_name,
-                database=fqn.build(
-                    metadata=self.metadata,
-                    entity_type=Database,
-                    service_name=self.context.get().database_service,
-                    database_name=self.context.get().database,
+                name=EntityName(schema_name),
+                database=FullyQualifiedEntityName(
+                    fqn.build(
+                        metadata=self.metadata,
+                        entity_type=Database,
+                        service_name=self.context.get().database_service,
+                        database_name=self.context.get().database,
+                    )
                 ),
             )
         )
@@ -178,7 +179,8 @@ class IcebergSource(DatabaseServiceSource):
         for table_identifier in self.iceberg.list_tables(namespace):
             try:
                 table = self.iceberg.load_table(table_identifier)
-                table_name = get_table_name_as_str(table)
+                # extract table name from table identifier, which does not include catalog name
+                table_name = get_table_name_as_str(table_identifier)
                 table_fqn = fqn.build(
                     self.metadata,
                     entity_type=Table,
@@ -224,7 +226,7 @@ class IcebergSource(DatabaseServiceSource):
                     )
                 )
 
-    def get_owner_ref(self, table_name: str) -> Optional[EntityReference]:
+    def get_owner_ref(self, table_name: str) -> Optional[EntityReferenceList]:
         owner = get_owner_from_table(
             self.context.get().iceberg_table, self.service_connection.ownershipProperty
         )
@@ -249,23 +251,25 @@ class IcebergSource(DatabaseServiceSource):
         table_name, table_type = table_name_and_type
         iceberg_table = self.context.get().iceberg_table
         try:
-            owner = self.get_owner_ref(table_name)
+            owners = self.get_owner_ref(table_name)
             table = IcebergTable.from_pyiceberg(
-                table_name, table_type, owner, iceberg_table
+                table_name, table_type, owners, iceberg_table
             )
             table_request = CreateTableRequest(
-                name=table.name,
+                name=EntityName(table.name),
                 tableType=table.tableType,
                 description=table.description,
-                owner=table.owner,
+                owners=table.owners,
                 columns=table.columns,
                 tablePartition=table.tablePartition,
-                databaseSchema=fqn.build(
-                    metadata=self.metadata,
-                    entity_type=DatabaseSchema,
-                    service_name=self.context.get().database_service,
-                    database_name=self.context.get().database,
-                    schema_name=self.context.get().database_schema,
+                databaseSchema=FullyQualifiedEntityName(
+                    fqn.build(
+                        metadata=self.metadata,
+                        entity_type=DatabaseSchema,
+                        service_name=self.context.get().database_service,
+                        database_name=self.context.get().database,
+                        schema_name=self.context.get().database_schema,
+                    )
                 ),
             )
             yield Either(right=table_request)
@@ -287,13 +291,6 @@ class IcebergSource(DatabaseServiceSource):
         """
         yield from []
 
-    def yield_view_lineage(self) -> Iterable[Either[AddLineageRequest]]:
-        """
-        From topology.
-        Parses view definition to get lineage information
-        """
-        yield from []
-
     def get_stored_procedures(self) -> Iterable[Any]:
         """Not Implemented"""
 
@@ -301,12 +298,6 @@ class IcebergSource(DatabaseServiceSource):
         self, stored_procedure: Any
     ) -> Iterable[Either[CreateStoredProcedureRequest]]:
         """Process the stored procedure information"""
-        yield from []
-
-    def yield_procedure_lineage_and_queries(
-        self,
-    ) -> Iterable[Either[Union[AddLineageRequest, CreateQueryRequest]]]:
-        """Extracts the lineage information from Stored Procedures"""
         yield from []
 
     def close(self):

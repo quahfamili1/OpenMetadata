@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,28 +16,33 @@ supporting sqlalchemy abstraction layer
 """
 import traceback
 from collections import defaultdict
-from copy import deepcopy
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import datetime
+from typing import Dict, List, Optional, Union
 
 from sqlalchemy import Column
 
 from metadata.generated.schema.entity.data.table import (
     CustomMetricProfile,
     DataType,
-    TableData,
+    Table,
 )
 from metadata.generated.schema.entity.services.connections.database.datalakeConnection import (
     DatalakeConnection,
 )
+from metadata.generated.schema.entity.services.databaseService import DatabaseConnection
+from metadata.generated.schema.metadataIngestion.databaseServiceProfilerPipeline import (
+    DatabaseServiceProfilerPipeline,
+)
 from metadata.generated.schema.tests.customMetric import CustomMetric
+from metadata.ingestion.ometa.ometa_api import OpenMetadata
 from metadata.mixins.pandas.pandas_mixin import PandasInterfaceMixin
 from metadata.profiler.api.models import ThreadPoolMetrics
 from metadata.profiler.interface.profiler_interface import ProfilerInterface
 from metadata.profiler.metrics.core import MetricTypes
 from metadata.profiler.metrics.registry import Metrics
 from metadata.profiler.processor.metric_filter import MetricFilter
-from metadata.utils.constants import COMPLEX_COLUMN_SEPARATOR, SAMPLE_DATA_DEFAULT_COUNT
+from metadata.sampler.pandas.sampler import DatalakeSampler
+from metadata.utils.constants import COMPLEX_COLUMN_SEPARATOR
 from metadata.utils.datalake.datalake_utils import GenericDataFrameColumnParser
 from metadata.utils.logger import profiler_interface_registry_logger
 from metadata.utils.sqa_like_column import SQALikeColumn
@@ -55,47 +60,30 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
 
     def __init__(
         self,
-        service_connection_config,
-        ometa_client,
-        entity,
-        storage_config,
-        profile_sample_config,
-        source_config,
-        sample_query,
-        table_partition_config,
+        service_connection_config: Union[DatabaseConnection, DatalakeConnection],
+        ometa_client: OpenMetadata,
+        entity: Table,
+        source_config: DatabaseServiceProfilerPipeline,
+        sampler: DatalakeSampler,
         thread_count: int = 5,
         timeout_seconds: int = 43200,
-        sample_data_count: int = SAMPLE_DATA_DEFAULT_COUNT,
         **kwargs,
     ):
         """Instantiate Pandas Interface object"""
 
         super().__init__(
-            service_connection_config,
-            ometa_client,
-            entity,
-            storage_config,
-            profile_sample_config,
-            source_config,
-            sample_query,
-            table_partition_config,
-            thread_count,
-            timeout_seconds,
-            sample_data_count,
+            service_connection_config=service_connection_config,
+            ometa_client=ometa_client,
+            entity=entity,
+            source_config=source_config,
+            sampler=sampler,
+            thread_count=thread_count,
+            timeout_seconds=timeout_seconds,
             **kwargs,
         )
 
-        self.client = self.connection.client
-        self.dfs = self.return_ometa_dataframes_sampled(
-            service_connection_config=self.service_connection_config,
-            client=self.client,
-            table=self.table_entity,
-            profile_sample_config=profile_sample_config,
-        )
-        self.sampler = self._get_sampler()
-        self.complex_dataframe_sample = deepcopy(
-            self.sampler.random_sample(is_sampled=True)
-        )
+        self.client = self.sampler.client
+        self.dataset = self.sampler.get_dataset()
         self.complex_df()
 
     def complex_df(self):
@@ -104,7 +92,7 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
         data_formats = (
             GenericDataFrameColumnParser._data_formats  # pylint: disable=protected-access
         )
-        for index, df in enumerate(self.complex_dataframe_sample):
+        for index, df in enumerate(self.dataset):
             if index == 0:
                 for col in self.table.columns:
                     coltype = next(
@@ -121,28 +109,13 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
                         coltype_mapping_df.append("object")
 
             try:
-                self.complex_dataframe_sample[index] = df.astype(
+                self.dataset[index] = df.astype(
                     dict(zip(df.keys(), coltype_mapping_df))
                 )
             except (TypeError, ValueError) as err:
-                self.complex_dataframe_sample[index] = df
+                self.dataset[index] = df
                 logger.warning(f"NaN/NoneType found in the Dataframe: {err}")
                 break
-
-    def _get_sampler(self):
-        """Get dataframe sampler from config"""
-        from metadata.profiler.processor.sampler.sampler_factory import (  # pylint: disable=import-outside-toplevel
-            sampler_factory_,
-        )
-
-        return sampler_factory_.create(
-            DatalakeConnection.__name__,
-            client=self.client,
-            table=self.dfs,
-            profile_sample_config=self.profile_sample_config,
-            partition_details=self.partition_details,
-            profile_sample_query=self.profile_query,
-        )
 
     def _compute_table_metrics(
         self,
@@ -152,7 +125,8 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
         **kwargs,
     ):
         """Given a list of metrics, compute the given results
-        and returns the values
+        and returns the values. Table metrics are computed on the
+        entire dataset omitting the sampling and partitioning
 
         Args:
             metrics: list of metrics to compute
@@ -163,7 +137,7 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
 
         try:
             row_dict = {}
-            df_list = [df.where(pd.notnull(df), None) for df in runner]
+            df_list = [df.where(pd.notnull(df), None) for df in self.dataset]
             for metric in metrics:
                 row_dict[metric.name()] = metric().df_fn(df_list)
             return row_dict
@@ -287,7 +261,7 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
                     if len(df.query(metric.expression).index)
                 )
                 custom_metrics.append(
-                    CustomMetricProfile(name=metric.name.__root__, value=row)
+                    CustomMetricProfile(name=metric.name.root, value=row)
                 )
 
             except Exception as exc:
@@ -303,13 +277,13 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
         metric_func: ThreadPoolMetrics,
     ):
         """Run metrics in processor worker"""
-        logger.debug(f"Running profiler for {metric_func.table.name.__root__}")
+        logger.debug(f"Running profiler for {metric_func.table.name.root}")
         try:
             row = None
-            if self.complex_dataframe_sample:
+            if self.dataset:
                 row = self._get_metric_fn[metric_func.metric_type.value](
                     metric_func.metrics,
-                    self.complex_dataframe_sample,
+                    self.dataset,
                     column=metric_func.column,
                 )
         except Exception as exc:
@@ -320,23 +294,11 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
             row = None
         if metric_func.column is not None:
             column = metric_func.column.name
-            self.status.scanned(f"{metric_func.table.name.__root__}.{column}")
+            self.status.scanned(f"{metric_func.table.name.root}.{column}")
         else:
-            self.status.scanned(metric_func.table.name.__root__)
+            self.status.scanned(metric_func.table.name.root)
             column = None
         return row, column, metric_func.metric_type.value
-
-    def fetch_sample_data(self, table, columns: SQALikeColumn) -> TableData:
-        """Fetch sample data from database
-
-        Args:
-            table: ORM declarative table
-
-        Returns:
-            TableData: sample table data
-        """
-        sampler = self._get_sampler()
-        return sampler.fetch_sample_data(columns)
 
     def get_composed_metrics(
         self, column: Column, metric: Metrics, column_results: Dict
@@ -358,9 +320,7 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
             logger.warning(f"Unexpected exception computing metrics: {exc}")
             return None
 
-    def get_hybrid_metrics(
-        self, column: Column, metric: Metrics, column_results: Dict, **kwargs
-    ):
+    def get_hybrid_metrics(self, column: Column, metric: Metrics, column_results: Dict):
         """Given a list of metrics, compute the given results
         and returns the values
 
@@ -372,7 +332,7 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
             dictionary of results
         """
         try:
-            return metric(column).df_fn(column_results, self.complex_dataframe_sample)
+            return metric(column).df_fn(column_results, self.dataset)
         except Exception as exc:
             logger.debug(traceback.format_exc())
             logger.warning(f"Unexpected exception computing metrics: {exc}")
@@ -403,9 +363,7 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
                         profile_results["columns"][column].update(
                             {
                                 "name": column,
-                                "timestamp": int(
-                                    datetime.now(tz=timezone.utc).timestamp() * 1000
-                                ),
+                                "timestamp": int(datetime.now().timestamp() * 1000),
                                 **profile,
                             }
                         )
@@ -419,15 +377,15 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
     def get_columns(self) -> List[Optional[SQALikeColumn]]:
         """Get SQALikeColumns for datalake to be passed for metric computation"""
         sqalike_columns = []
-        if self.complex_dataframe_sample:
-            for column_name in self.complex_dataframe_sample[0].columns:
+        if self.dataset:
+            for column_name in self.dataset[0].columns:
                 complex_col_name = None
                 if COMPLEX_COLUMN_SEPARATOR in column_name:
                     complex_col_name = ".".join(
                         column_name.split(COMPLEX_COLUMN_SEPARATOR)[1:]
                     )
                     if complex_col_name:
-                        for df in self.complex_dataframe_sample:
+                        for df in self.dataset:
                             df.rename(
                                 columns={column_name: complex_col_name}, inplace=True
                             )
@@ -436,7 +394,7 @@ class PandasProfilerInterface(ProfilerInterface, PandasInterfaceMixin):
                     SQALikeColumn(
                         column_name,
                         GenericDataFrameColumnParser.fetch_col_types(
-                            self.complex_dataframe_sample[0], column_name
+                            self.dataset[0], column_name
                         ),
                     )
                 )

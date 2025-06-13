@@ -13,7 +13,6 @@
 
 import Icon from '@ant-design/icons';
 import {
-  Badge,
   Button,
   Card,
   Col,
@@ -24,7 +23,7 @@ import {
   Typography,
 } from 'antd';
 import { AxiosError } from 'axios';
-import { startCase } from 'lodash';
+import { startCase, toString } from 'lodash';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHistory } from 'react-router-dom';
@@ -297,7 +296,7 @@ const AppearanceConfigSettingsPage = () => {
 
   return (
     <PageLayoutV1 pageTitle={t('label.theme')}>
-      <Row align="middle" className="page-container" gutter={[0, 16]}>
+      <Row align="middle" gutter={[0, 16]}>
         <Col span={24}>
           <TitleBreadcrumb titleLinks={breadcrumbs} />
         </Col>
@@ -339,7 +338,7 @@ const AppearanceConfigSettingsPage = () => {
                 <Row className="w-full" gutter={[16, 16]}>
                   {customLogoFormFields.map((field) => {
                     return (
-                      <Col className="w-full" key={field.name} span={24}>
+                      <Col className="w-full" key={field.id} span={24}>
                         <Row gutter={[48, 16]}>
                           <Col span={12}>{getField(field)}</Col>
                           <Col>
@@ -364,17 +363,7 @@ const AppearanceConfigSettingsPage = () => {
               <Card
                 className="white-label-config-card"
                 title={
-                  <div className="d-flex items-center">
-                    <Typography.Text>{t('label.custom-theme')}</Typography.Text>
-
-                    <Badge
-                      className="custom-theme-beta-tag"
-                      count={t('label.beta')}
-                      data-testid="custom-theme-beta-tag"
-                      offset={[10, 0]}
-                      size="small"
-                    />
-                  </div>
+                  <Typography.Text>{t('label.custom-theme')}</Typography.Text>
                 }>
                 <Row className="w-full" gutter={[16, 16]}>
                   {themeFormFields.map((field) => {
@@ -384,7 +373,7 @@ const AppearanceConfigSettingsPage = () => {
                       ];
 
                     return (
-                      <Col className="w-full" key={field.name} span={24}>
+                      <Col className="w-full" key={field.id} span={24}>
                         <Row gutter={[48, 16]}>
                           <Col span={12}>{getField(field)}</Col>
                           <Col style={{ placeSelf: 'center' }}>
@@ -395,7 +384,9 @@ const AppearanceConfigSettingsPage = () => {
                                   color: 'white',
                                   width: '86px',
                                 }}>
-                                {startCase(field.name.replace('Color', ''))}
+                                {startCase(
+                                  toString(field.name).replace('Color', '')
+                                )}
                               </Button>
 
                               <Button
@@ -413,7 +404,9 @@ const AppearanceConfigSettingsPage = () => {
                                   width: '86px',
                                 }}
                                 type="default">
-                                {startCase(field.name.replace('Color', ''))}
+                                {startCase(
+                                  toString(field.name).replace('Color', '')
+                                )}
                               </Button>
                               <DomainIcon
                                 style={{
@@ -440,7 +433,7 @@ const AppearanceConfigSettingsPage = () => {
             </div>
 
             <Space
-              className="w-full justify-end"
+              className="w-full justify-end appearance-cta-buttons"
               data-testid="cta-buttons"
               size={16}>
               <Button

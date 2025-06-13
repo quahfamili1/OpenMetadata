@@ -22,19 +22,35 @@ import {
   Select,
   Switch,
 } from 'antd';
-import { RuleRender } from 'antd/lib/form';
+import { FormListProps, RuleRender } from 'antd/lib/form';
 import 'codemirror/addon/fold/foldgutter.css';
-import { isUndefined } from 'lodash';
-import React from 'react';
+import { debounce, isUndefined } from 'lodash';
+import React, {
+  ReactElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as IconDelete } from '../../../../assets/svg/ic-delete.svg';
+import { WILD_CARD_CHAR } from '../../../../constants/char.constants';
+import { PAGE_SIZE_LARGE } from '../../../../constants/constants';
 import { SUPPORTED_PARTITION_TYPE_FOR_DATE_TIME } from '../../../../constants/profiler.constant';
+import { TABLE_DIFF } from '../../../../constants/TestSuite.constant';
 import { CSMode } from '../../../../enums/codemirror.enum';
+import { SearchIndex } from '../../../../enums/search.enum';
 import {
   Rule,
   TestCaseParameterDefinition,
   TestDataType,
 } from '../../../../generated/tests/testDefinition';
+import {
+  SearchHitBody,
+  TableSearchSource,
+} from '../../../../interface/search.interface';
+import { searchQuery } from '../../../../rest/searchAPI';
+import { getEntityName } from '../../../../utils/EntityUtils';
 import {
   validateEquals,
   validateGreaterThanOrEquals,
@@ -48,13 +64,18 @@ import { ParameterFormProps } from '../AddDataQualityTest.interface';
 const ParameterForm: React.FC<ParameterFormProps> = ({ definition, table }) => {
   const { t } = useTranslation();
 
-  const prepareForm = (data: TestCaseParameterDefinition) => {
+  const prepareForm = (
+    data: TestCaseParameterDefinition,
+    DynamicField?: ReactElement
+  ) => {
+    const label = getEntityName(data);
     const ruleValidation: RuleRender = ({ getFieldValue }) => ({
-      validator(_, value) {
+      validator(_, formValue) {
         if (data?.validationRule) {
           const fieldValue = data.validationRule.parameterField
-            ? getFieldValue(['params', data.validationRule.parameterField])
+            ? +getFieldValue(['params', data.validationRule.parameterField])
             : undefined;
+          const value = +formValue;
           if (fieldValue && value) {
             switch (data.validationRule.rule) {
               case Rule.GreaterThanOrEquals:
@@ -77,7 +98,7 @@ const ParameterForm: React.FC<ParameterFormProps> = ({ definition, table }) => {
     let Field = (
       <Input
         placeholder={`${t('message.enter-a-field', {
-          field: data.displayName,
+          field: label,
         })}`}
       />
     );
@@ -85,7 +106,7 @@ const ParameterForm: React.FC<ParameterFormProps> = ({ definition, table }) => {
       Field = (
         <Select
           placeholder={`${t('label.please-select-entity', {
-            entity: data.displayName,
+            entity: label,
           })}`}>
           {data.optionValues.map((value) => (
             <Select.Option key={value}>{value}</Select.Option>
@@ -134,11 +155,21 @@ const ParameterForm: React.FC<ParameterFormProps> = ({ definition, table }) => {
                 showCopyButton={false}
               />
             );
+          } else if (data.name === 'column') {
+            Field = (
+              <Select
+                options={table?.columns.map((column) => ({
+                  label: getEntityName(column),
+                  value: column.name,
+                }))}
+                placeholder={t('message.select-column-name')}
+              />
+            );
           } else {
             Field = (
               <Input
                 placeholder={`${t('message.enter-a-field', {
-                  field: data.displayName,
+                  field: label,
                 })}`}
               />
             );
@@ -154,7 +185,7 @@ const ParameterForm: React.FC<ParameterFormProps> = ({ definition, table }) => {
             <InputNumber
               className="w-full"
               placeholder={`${t('message.enter-a-field', {
-                field: data.displayName,
+                field: label,
               })}`}
             />
           );
@@ -173,14 +204,14 @@ const ParameterForm: React.FC<ParameterFormProps> = ({ definition, table }) => {
           Field = (
             <Input
               placeholder={`${t('message.enter-comma-separated-field', {
-                field: data.displayName,
+                field: label,
               })}`}
             />
           );
 
           return (
             <Form.List
-              initialValue={[{ value: '' }]}
+              initialValue={[{ value: undefined }]}
               key={data.name}
               name={data.name || ''}>
               {(fields, { add, remove }) => (
@@ -210,15 +241,17 @@ const ParameterForm: React.FC<ParameterFormProps> = ({ definition, table }) => {
                           {
                             required: data.required,
                             message: `${t('message.field-text-is-required', {
-                              fieldText: data.displayName,
+                              fieldText: label,
                             })}`,
                           },
                         ]}>
-                        <Input
-                          placeholder={`${t('message.enter-a-field', {
-                            field: data.displayName,
-                          })}`}
-                        />
+                        {DynamicField ?? (
+                          <Input
+                            placeholder={`${t('message.enter-a-field', {
+                              field: label,
+                            })}`}
+                          />
+                        )}
                       </Form.Item>
                       <Button
                         icon={
@@ -244,29 +277,149 @@ const ParameterForm: React.FC<ParameterFormProps> = ({ definition, table }) => {
       <Form.Item
         data-testid="parameter"
         key={data.name}
-        label={`${data.displayName}:`}
+        label={label}
         name={data.name}
         rules={[
           {
             required: data.required,
             message: `${t('message.field-text-is-required', {
-              fieldText: data.displayName,
+              fieldText: label,
             })}`,
           },
           ruleValidation,
         ]}
         tooltip={data.description}
         {...internalFormItemProps}>
-        {Field}
+        {DynamicField ?? Field}
       </Form.Item>
     );
   };
 
-  return (
-    <Form.List name="params">
-      {() => definition.parameterDefinition?.map(prepareForm)}
-    </Form.List>
-  );
+  const TableDiffForm = () => {
+    const [isOptionsLoading, setIsOptionsLoading] = useState(false);
+    const [tableList, setTableList] = useState<
+      SearchHitBody<
+        SearchIndex.TABLE,
+        Pick<TableSearchSource, 'name' | 'displayName' | 'fullyQualifiedName'>
+      >[]
+    >([]);
+    const tableOptions = useMemo(
+      () =>
+        tableList.map((hit) => {
+          return {
+            label: hit._source.fullyQualifiedName,
+            value: hit._source.fullyQualifiedName,
+          };
+        }),
+      [tableList]
+    );
+    const fetchTableData = async (search = WILD_CARD_CHAR) => {
+      setIsOptionsLoading(true);
+      try {
+        const response = await searchQuery({
+          query: `*${search}*`,
+          pageNumber: 1,
+          pageSize: PAGE_SIZE_LARGE,
+          searchIndex: SearchIndex.TABLE,
+          fetchSource: true,
+          includeFields: ['name', 'fullyQualifiedName', 'displayName'],
+        });
+
+        setTableList(response.hits.hits);
+      } catch (error) {
+        setTableList([]);
+      } finally {
+        setIsOptionsLoading(false);
+      }
+    };
+
+    const debounceFetchTableData = useCallback(debounce(fetchTableData, 1000), [
+      fetchTableData,
+    ]);
+
+    const getFormData = (data: TestCaseParameterDefinition) => {
+      switch (data.name) {
+        case 'table2':
+          return prepareForm(
+            data,
+            <Select
+              allowClear
+              showSearch
+              data-testid="table2"
+              loading={isOptionsLoading}
+              options={tableOptions}
+              placeholder={t('label.table')}
+              popupClassName="no-wrap-option"
+              onSearch={debounceFetchTableData}
+            />
+          );
+
+        case 'keyColumns':
+        case 'useColumns':
+          return (
+            <Form.Item noStyle shouldUpdate>
+              {({ getFieldValue }) => {
+                // Convert selectedKeyColumn and selectedUseColumns to Sets for efficient lookup
+                const selectedKeyColumnSet = new Set(
+                  getFieldValue(['params', 'keyColumns'])?.map(
+                    (item: { value: string }) => item?.value
+                  )
+                );
+                const selectedUseColumnsSet = new Set(
+                  getFieldValue(['params', 'useColumns'])?.map(
+                    (item: { value: string }) => item?.value
+                  )
+                );
+
+                // Combine both Sets for a single lookup operation
+                const selectedColumnsSet = new Set([
+                  ...selectedKeyColumnSet,
+                  ...selectedUseColumnsSet,
+                ]);
+
+                const columns = table?.columns.map((column) => ({
+                  label: getEntityName(column),
+                  value: column.name,
+                  // Check if column.name is in the combined Set to determine if it should be disabled
+                  disabled: selectedColumnsSet.has(column.name),
+                }));
+
+                return prepareForm(
+                  data,
+                  <Select
+                    allowClear
+                    showSearch
+                    options={columns}
+                    placeholder={t('label.column')}
+                  />
+                );
+              }}
+            </Form.Item>
+          );
+
+        default:
+          return prepareForm(data);
+      }
+    };
+
+    useEffect(() => {
+      fetchTableData();
+    }, []);
+
+    return <>{definition.parameterDefinition?.map(getFormData)}</>;
+  };
+
+  const paramsForm: FormListProps['children'] = () => {
+    switch (definition.fullyQualifiedName) {
+      case TABLE_DIFF:
+        return <TableDiffForm />;
+
+      default:
+        return definition.parameterDefinition?.map((data) => prepareForm(data));
+    }
+  };
+
+  return <Form.List name="params">{paramsForm}</Form.List>;
 };
 
 export default ParameterForm;

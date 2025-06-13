@@ -11,9 +11,9 @@
  *  limitations under the License.
  */
 
-import { Col, Row } from 'antd';
-import { t } from 'i18next';
-import React, { useLayoutEffect, useMemo, useState } from 'react';
+import { Card, Col, Row } from 'antd';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Redirect,
   Route,
@@ -22,34 +22,38 @@ import {
   useParams,
 } from 'react-router-dom';
 import ErrorPlaceHolder from '../../components/common/ErrorWithPlaceholder/ErrorPlaceHolder';
-import PageLayoutV1 from '../../components/PageLayoutV1/PageLayoutV1';
+import ResizableLeftPanels from '../../components/common/ResizablePanels/ResizableLeftPanels';
 import { ROUTES } from '../../constants/constants';
 import { ENTITIES_CHARTS } from '../../constants/DataInsight.constants';
 import { usePermissionProvider } from '../../context/PermissionProvider/PermissionProvider';
 import { ResourceEntity } from '../../context/PermissionProvider/PermissionProvider.interface';
 import { ERROR_PLACEHOLDER_TYPE } from '../../enums/common.enum';
+import { SystemChartType } from '../../enums/DataInsight.enum';
 import { DataInsightChartType } from '../../generated/dataInsight/dataInsightChartResult';
 import { Operation } from '../../generated/entity/policies/policy';
+import { withPageLayout } from '../../hoc/withPageLayout';
 import { DataInsightTabs } from '../../interface/data-insight.interface';
 import { getDataInsightPathWithFqn } from '../../utils/DataInsightUtils';
+import i18n from '../../utils/i18next/LocalUtil';
 import { checkPermission } from '../../utils/PermissionsUtils';
 import './data-insight.less';
-import DataInsightClassBase from './DataInsightClassBase';
+import { default as dataInsightClassBase } from './DataInsightClassBase';
 import DataInsightHeader from './DataInsightHeader/DataInsightHeader.component';
-import DataInsightLeftPanel from './DataInsightLeftPanel/DataInsightLeftPanel';
 import DataInsightProvider from './DataInsightProvider';
 
 const DataInsightPage = () => {
   const { tab } = useParams<{ tab: DataInsightTabs }>();
-
+  const { t } = useTranslation();
   const { permissions } = usePermissionProvider();
   const history = useHistory();
+  const LeftPanel = dataInsightClassBase.getLeftPanel();
   const isHeaderVisible = useMemo(
     () =>
       [
         DataInsightTabs.DATA_ASSETS,
         DataInsightTabs.KPIS,
         DataInsightTabs.APP_ANALYTICS,
+        'dashboard',
       ].includes(tab),
     [tab]
   );
@@ -69,16 +73,21 @@ const DataInsightPage = () => {
     [permissions]
   );
 
-  const [selectedChart, setSelectedChart] = useState<DataInsightChartType>();
+  const [selectedChart, setSelectedChart] = useState<
+    SystemChartType | DataInsightChartType
+  >();
 
-  const handleScrollToChart = (chartType: DataInsightChartType) => {
-    if (ENTITIES_CHARTS.includes(chartType)) {
-      history.push(getDataInsightPathWithFqn(DataInsightTabs.DATA_ASSETS));
-    } else {
-      history.push(getDataInsightPathWithFqn(DataInsightTabs.APP_ANALYTICS));
-    }
-    setSelectedChart(chartType);
-  };
+  const handleScrollToChart = useCallback(
+    (chartType: SystemChartType | DataInsightChartType) => {
+      if (ENTITIES_CHARTS.includes(chartType as SystemChartType)) {
+        history.push(getDataInsightPathWithFqn(DataInsightTabs.DATA_ASSETS));
+      } else {
+        history.push(getDataInsightPathWithFqn(DataInsightTabs.APP_ANALYTICS));
+      }
+      setSelectedChart(chartType);
+    },
+    [history]
+  );
 
   useLayoutEffect(() => {
     if (selectedChart) {
@@ -98,60 +107,89 @@ const DataInsightPage = () => {
           (tab === DataInsightTabs.APP_ANALYTICS ||
             tab === DataInsightTabs.DATA_ASSETS),
         noKPIPermission: !viewKPIPermission && tab === DataInsightTabs.KPIS,
-        dataInsightTabs: DataInsightClassBase.getDataInsightTab(),
+        dataInsightTabs: dataInsightClassBase.getDataInsightTab(),
       };
 
       return data;
     }, [viewDataInsightChartPermission, viewKPIPermission, tab]);
 
   if (!viewDataInsightChartPermission && !viewKPIPermission) {
-    return <ErrorPlaceHolder type={ERROR_PLACEHOLDER_TYPE.PERMISSION} />;
+    return (
+      <ErrorPlaceHolder
+        className="border-none h-min-80"
+        permissionValue={t('label.view-entity', {
+          entity: t('label.data-insight'),
+        })}
+        type={ERROR_PLACEHOLDER_TYPE.PERMISSION}
+      />
+    );
   }
 
   if (noDataInsightPermission || noKPIPermission) {
     return (
       <Row align="middle" className="w-full h-full" justify="center">
         <Col span={24}>
-          <ErrorPlaceHolder type={ERROR_PLACEHOLDER_TYPE.PERMISSION} />
+          <ErrorPlaceHolder
+            className="border-none"
+            permissionValue={t('label.view-entity', {
+              entity: t('label.data-insight'),
+            })}
+            type={ERROR_PLACEHOLDER_TYPE.PERMISSION}
+          />
         </Col>
       </Row>
     );
   }
 
   return (
-    <PageLayoutV1
-      leftPanel={<DataInsightLeftPanel />}
-      pageTitle={t('label.data-insight')}>
-      <DataInsightProvider>
-        <Row
-          className="page-container"
-          data-testid="data-insight-container"
-          gutter={[16, 16]}>
-          {isHeaderVisible && (
-            <Col span={24}>
-              <DataInsightHeader onScrollToChart={handleScrollToChart} />
-            </Col>
-          )}
-          <Col span={24}>
-            <Switch>
-              {dataInsightTabs.map((tab) => (
-                <Route
-                  exact
-                  component={tab.component}
-                  key={tab.key}
-                  path={tab.path}
-                />
-              ))}
-
-              <Route exact path={ROUTES.DATA_INSIGHT}>
-                <Redirect to={getDataInsightPathWithFqn()} />
-              </Route>
-            </Switch>
-          </Col>
-        </Row>
-      </DataInsightProvider>
-    </PageLayoutV1>
+    <div>
+      <ResizableLeftPanels
+        className="content-height-with-resizable-panel"
+        firstPanel={{
+          className: 'content-resizable-panel-container',
+          minWidth: 280,
+          flex: 0.13,
+          children: <LeftPanel />,
+        }}
+        pageTitle={t('label.data-insight')}
+        secondPanel={{
+          children: (
+            <DataInsightProvider>
+              <Card className="h-full overflow-y-auto">
+                <Row data-testid="data-insight-container" gutter={[16, 16]}>
+                  {isHeaderVisible && (
+                    <Col span={24}>
+                      <DataInsightHeader
+                        onScrollToChart={handleScrollToChart}
+                      />
+                    </Col>
+                  )}
+                  <Col span={24}>
+                    <Switch>
+                      {dataInsightTabs.map((tab) => (
+                        <Route
+                          exact
+                          component={tab.component}
+                          key={tab.key}
+                          path={tab.path}
+                        />
+                      ))}
+                      <Route exact path={ROUTES.DATA_INSIGHT}>
+                        <Redirect to={getDataInsightPathWithFqn()} />
+                      </Route>
+                    </Switch>
+                  </Col>
+                </Row>
+              </Card>
+            </DataInsightProvider>
+          ),
+          className: 'content-resizable-panel-container',
+          minWidth: 800,
+          flex: 0.87,
+        }}
+      />
+    </div>
   );
 };
 
-export default DataInsightPage;
+export default withPageLayout(i18n.t('label.data-insight'))(DataInsightPage);

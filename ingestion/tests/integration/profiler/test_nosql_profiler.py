@@ -1,8 +1,8 @@
 #  Copyright 2024 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -33,19 +33,20 @@ from unittest import TestCase
 from pymongo import MongoClient, database
 from testcontainers.mongodb import MongoDbContainer
 
+from _openmetadata_testutils.ometa import int_admin_ometa
 from metadata.generated.schema.entity.data.table import ColumnProfile, Table
 from metadata.generated.schema.entity.services.databaseService import DatabaseService
+from metadata.generated.schema.type.basic import Timestamp
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
 from metadata.profiler.api.models import TableConfig
 from metadata.utils.constants import SAMPLE_DATA_DEFAULT_COUNT
 from metadata.utils.helpers import datetime_to_ts
 from metadata.utils.test_utils import accumulate_errors
 from metadata.utils.time_utils import get_end_of_day_timestamp_mill
+from metadata.workflow.classification import AutoClassificationWorkflow
 from metadata.workflow.metadata import MetadataWorkflow
 from metadata.workflow.profiler import ProfilerWorkflow
-from metadata.workflow.workflow_output_handler import print_status
-
-from ..integration_base import int_admin_ometa
+from metadata.workflow.workflow_output_handler import WorkflowResultStatus
 
 SERVICE_NAME = Path(__file__).stem
 
@@ -144,7 +145,7 @@ class NoSQLProfiler(TestCase):
         )
         ingestion_workflow.execute()
         ingestion_workflow.raise_from_status()
-        print_status(ingestion_workflow)
+        ingestion_workflow.print_status()
         ingestion_workflow.stop()
 
     @classmethod
@@ -156,9 +157,7 @@ class NoSQLProfiler(TestCase):
     @classmethod
     def delete_service(cls):
         service_id = str(
-            cls.metadata.get_by_name(
-                entity=DatabaseService, fqn=SERVICE_NAME
-            ).id.__root__
+            cls.metadata.get_by_name(entity=DatabaseService, fqn=SERVICE_NAME).id.root
         )
         cls.metadata.delete(
             entity=DatabaseService,
@@ -178,7 +177,14 @@ class NoSQLProfiler(TestCase):
         profiler_workflow.execute()
         status = profiler_workflow.result_status()
         profiler_workflow.stop()
-        assert status == 0
+        assert status == WorkflowResultStatus.SUCCESS
+
+    def run_auto_classification_workflow(self, config):
+        auto_classification_workflow = AutoClassificationWorkflow.create(config)
+        auto_classification_workflow.execute()
+        status = auto_classification_workflow.result_status()
+        auto_classification_workflow.stop()
+        assert status == WorkflowResultStatus.SUCCESS
 
     def test_simple(self):
         workflow_config = deepcopy(self.ingestion_config)
@@ -208,7 +214,7 @@ class NoSQLProfiler(TestCase):
                     "columns": [
                         ColumnProfile(
                             name="age",
-                            timestamp=datetime.now().timestamp(),
+                            timestamp=Timestamp(int(datetime.now().timestamp())),
                             max=60,
                             min=20,
                         ),
@@ -242,11 +248,25 @@ class NoSQLProfiler(TestCase):
                     assert c1.max == c2.max
                     assert c1.min == c2.min
 
+        auto_workflow_config = deepcopy(self.ingestion_config)
+        auto_workflow_config["source"]["sourceConfig"]["config"].update(
+            {
+                "type": "AutoClassification",
+                "storeSampleData": True,
+                "enableAutoClassification": False,
+            }
+        )
+        auto_workflow_config["processor"] = {
+            "type": "orm-profiler",
+            "config": {},
+        }
+        self.run_auto_classification_workflow(auto_workflow_config)
+
         table = self.metadata.get_by_name(
             Table, f"{SERVICE_NAME}.default.{TEST_DATABASE}.{TEST_COLLECTION}"
         )
         sample_data = self.metadata.get_sample_data(table)
-        assert [c.__root__ for c in sample_data.sampleData.columns] == [
+        assert [c.root for c in sample_data.sampleData.columns] == [
             "_id",
             "name",
             "age",
@@ -291,7 +311,7 @@ class NoSQLProfiler(TestCase):
                     "columns": [
                         ColumnProfile(
                             name="age",
-                            timestamp=datetime.now().timestamp(),
+                            timestamp=Timestamp(int(datetime.now().timestamp())),
                             max=query_age,
                             min=query_age,
                         ),
@@ -322,13 +342,35 @@ class NoSQLProfiler(TestCase):
             assert (len(column_profile.entities) > 0) == (
                 len(tc["expected"]["columns"]) > 0
             )
+
+        auto_workflow_config = deepcopy(self.ingestion_config)
+        auto_workflow_config["source"]["sourceConfig"]["config"].update(
+            {
+                "type": "AutoClassification",
+                "storeSampleData": True,
+                "enableAutoClassification": False,
+            }
+        )
+        auto_workflow_config["processor"] = {
+            "type": "orm-profiler",
+            "config": {
+                "tableConfig": [
+                    {
+                        "fullyQualifiedName": f"{SERVICE_NAME}.default.{TEST_DATABASE}.{TEST_COLLECTION}",
+                        "profileQuery": '{"age": %s}' % query_age,
+                    }
+                ],
+            },
+        }
+        self.run_auto_classification_workflow(auto_workflow_config)
+
         table = self.metadata.get_by_name(
             Table, f"{SERVICE_NAME}.default.{TEST_DATABASE}.{TEST_COLLECTION}"
         )
         sample_data = self.metadata.get_sample_data(table)
-        age_column_index = [
-            col.__root__ for col in sample_data.sampleData.columns
-        ].index("age")
+        age_column_index = [col.root for col in sample_data.sampleData.columns].index(
+            "age"
+        )
         assert all(
-            [r[age_column_index] == query_age for r in sample_data.sampleData.rows]
+            [r[age_column_index] == str(query_age) for r in sample_data.sampleData.rows]
         )

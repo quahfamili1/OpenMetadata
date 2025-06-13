@@ -1,9 +1,9 @@
 #  pylint: disable=protected-access,attribute-defined-outside-init
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -53,7 +53,7 @@ class AbstractTableMetricComputer(ABC):
         self._metrics = metrics
         self._conn_config = conn_config
         self._database = self._runner._session.get_bind().url.database
-        self._table = self._runner.table
+        self._table = self._runner.dataset
         self._entity = entity
 
     @property
@@ -91,8 +91,8 @@ class AbstractTableMetricComputer(ABC):
             table (DeclarativeMeta): _description_
         """
         try:
-            self._schema_name = self.table.__table_args__.get("schema")
-            self._table_name = self.table.__tablename__
+            self._schema_name = self.runner.schema_name
+            self._table_name = self.runner.table_name
         except AttributeError:
             raise AttributeError(ERROR_MSG)
 
@@ -119,10 +119,10 @@ class AbstractTableMetricComputer(ABC):
         Returns:
             Tuple[str, int]
         """
-        col_names = literal(",".join(inspect(self.table).c.keys()), type_=String).label(
-            COLUMN_NAMES
-        )
-        col_count = literal(len(inspect(self.table).c)).label(COLUMN_COUNT)
+        col_names = literal(
+            ",".join(inspect(self.runner.raw_dataset).c.keys()), type_=String
+        ).label(COLUMN_NAMES)
+        col_count = literal(len(inspect(self.runner.raw_dataset).c)).label(COLUMN_COUNT)
         return col_names, col_count
 
     def _build_query(
@@ -147,7 +147,8 @@ class BaseTableMetricComputer(AbstractTableMetricComputer):
     """Base table computer"""
 
     def compute(self):
-        """Default compute behavior for table metrics"""
+        """Default compute behavior for table metrics. This method will use the raw table
+        to compute metrics and omit any sampling or partitioning logic."""
         return self.runner.select_first_from_table(
             *[metric().fn() for metric in self.metrics]
         )
@@ -176,6 +177,8 @@ class SnowflakeTableMetricComputer(BaseTableMetricComputer):
         )
 
         rest = self._runner._session.execute(query).first()
+        if not rest:
+            return None
         if rest.rowCount is None:
             # if we don't have any row count, fallback to the base logic
             return super().compute()
@@ -194,7 +197,7 @@ class OracleTableMetricComputer(BaseTableMetricComputer):
                     Column("object_name").label("table_name"),
                     Column("created"),
                 ],
-                self._build_table("all_objects", None),
+                self._build_table("DBA_OBJECTS", None),
                 [
                     func.lower(Column("owner")) == self.schema_name.lower(),
                     func.lower(Column("object_name")) == self.table_name.lower(),
@@ -209,7 +212,7 @@ class OracleTableMetricComputer(BaseTableMetricComputer):
                     Column("table_name"),
                     Column("NUM_ROWS"),
                 ],
-                self._build_table("all_tables", None),
+                self._build_table("DBA_TABLES", None),
                 [
                     func.lower(Column("owner")) == self.schema_name.lower(),
                     func.lower(Column("table_name")) == self.table_name.lower(),
@@ -295,7 +298,7 @@ class BigQueryTableMetricComputer(BaseTableMetricComputer):
 
         where_clause = [
             Column("project_id")
-            == self.conn_config.credentials.gcpConfig.projectId.__root__,
+            == self.conn_config.credentials.gcpConfig.projectId.root,
             Column("table_schema") == self.schema_name,
             Column("table_name") == self.table_name,
         ]
@@ -324,22 +327,25 @@ class BigQueryTableMetricComputer(BaseTableMetricComputer):
         columns = [
             Column("row_count").label("rowCount"),
             Column("size_bytes").label("sizeInBytes"),
-            Column("creation_time").label("createDateTime"),
+            func.TIMESTAMP_MILLIS(Column("creation_time")).label(CREATE_DATETIME),
             *self._get_col_names_and_count(),
         ]
         where_clause = [
             Column("project_id")
-            == self.conn_config.credentials.gcpConfig.projectId.__root__,
+            == self.conn_config.credentials.gcpConfig.projectId.root,
             Column("dataset_id") == self.schema_name,
             Column("table_id") == self.table_name,
         ]
-
+        schema = (
+            self.schema_name.startswith(
+                f"{self.conn_config.credentials.gcpConfig.projectId.root}."
+            )
+            and self.schema_name
+            or f"{self.conn_config.credentials.gcpConfig.projectId.root}.{self.schema_name}"
+        )
         query = self._build_query(
             columns,
-            self._build_table(
-                "__TABLES__",
-                f"{self.conn_config.credentials.gcpConfig.projectId.__root__}.{self.schema_name}",
-            ),
+            self._build_table("__TABLES__", schema),
             where_clause,
         )
         res = self.runner._session.execute(query).first()
@@ -411,7 +417,7 @@ class RedshiftTableMetricComputer(BaseTableMetricComputer):
         )
         res = self.runner._session.execute(query).first()
         if not res:
-            return None
+            return super().compute()
         if res.rowCount is None or (
             res.rowCount == 0 and self._entity.tableType == TableType.View
         ):

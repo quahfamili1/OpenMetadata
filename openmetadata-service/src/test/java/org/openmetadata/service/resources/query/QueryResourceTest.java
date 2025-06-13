@@ -1,7 +1,7 @@
 package org.openmetadata.service.resources.query;
 
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.OK;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.OK;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.openmetadata.service.security.SecurityUtil.authHeaders;
@@ -13,11 +13,11 @@ import static org.openmetadata.service.util.TestUtils.assertListNotNull;
 import static org.openmetadata.service.util.TestUtils.assertListNull;
 import static org.openmetadata.service.util.TestUtils.assertResponse;
 
+import jakarta.ws.rs.client.WebTarget;
+import jakarta.ws.rs.core.Response;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import javax.ws.rs.client.WebTarget;
-import javax.ws.rs.core.Response;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -53,7 +53,7 @@ public class QueryResourceTest extends EntityResourceTest<Query, CreateQuery> {
     super(
         Entity.QUERY, Query.class, QueryResource.QueryList.class, "queries", QueryResource.FIELDS);
     supportsSearchIndex = true;
-    runWebhookTests = false;
+    EVENT_SUBSCRIPTION_TEST_CONTROL_FLAG = false;
   }
 
   @BeforeAll
@@ -67,7 +67,7 @@ public class QueryResourceTest extends EntityResourceTest<Query, CreateQuery> {
             .createRequest(test)
             .withName(getEntityName(test))
             .withColumns(columns)
-            .withOwner(EntityResourceTest.USER1_REF);
+            .withOwners(List.of(EntityResourceTest.USER1_REF));
     Table createdTable = tableResourceTest.createAndCheckEntity(create, ADMIN_AUTH_HEADERS);
     TABLE_REF = createdTable.getEntityReference();
     QUERY = "select * from %s";
@@ -78,7 +78,7 @@ public class QueryResourceTest extends EntityResourceTest<Query, CreateQuery> {
   public CreateQuery createRequest(String type) {
     return new CreateQuery()
         .withName(type)
-        .withOwner(USER1_REF)
+        .withOwners(List.of(USER1_REF))
         .withUsers(List.of(USER2.getName()))
         .withQueryUsedIn(List.of(TABLE_REF))
         .withQuery(String.format(QUERY, RandomStringUtils.random(10, true, false)))
@@ -106,13 +106,13 @@ public class QueryResourceTest extends EntityResourceTest<Query, CreateQuery> {
         byName
             ? getEntityByName(entity.getFullyQualifiedName(), fields, ADMIN_AUTH_HEADERS)
             : getEntity(entity.getId(), null, ADMIN_AUTH_HEADERS);
-    assertListNull(entity.getOwner(), entity.getUsers(), entity.getQueryUsedIn());
-    fields = "owner,tags,followers,users,queryUsedIn"; // Not testing for kpiResult field
+    assertListNull(entity.getOwners(), entity.getUsers(), entity.getQueryUsedIn());
+    fields = "owners,tags,followers,users,queryUsedIn"; // Not testing for kpiResult field
     entity =
         byName
             ? getEntityByName(entity.getFullyQualifiedName(), fields, ADMIN_AUTH_HEADERS)
             : getEntity(entity.getId(), fields, ADMIN_AUTH_HEADERS);
-    assertListNotNull(entity.getOwner(), entity.getUsers(), entity.getQueryUsedIn());
+    assertListNotNull(entity.getOwners(), entity.getUsers(), entity.getQueryUsedIn());
     return entity;
   }
 
@@ -145,15 +145,15 @@ public class QueryResourceTest extends EntityResourceTest<Query, CreateQuery> {
     assertResponse(
         () -> createEntity(create, ADMIN_AUTH_HEADERS),
         Response.Status.BAD_REQUEST,
-        "[query must not be null]");
+        "[query param query must not be null]");
   }
 
   @Test
   void post_same_query_forSameEntityType_409(TestInfo test) throws HttpResponseException {
     CreateQuery create = createRequest(getEntityName(test));
-    createEntity(create, ADMIN_AUTH_HEADERS);
+    Query query = createEntity(create, ADMIN_AUTH_HEADERS);
 
-    CreateQuery create1 = createRequest(getEntityName(test));
+    CreateQuery create1 = createRequest(query.getName());
 
     assertResponse(
         () -> createEntity(create1, ADMIN_AUTH_HEADERS),

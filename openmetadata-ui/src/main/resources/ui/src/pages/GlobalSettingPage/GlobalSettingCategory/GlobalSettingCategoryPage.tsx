@@ -27,8 +27,8 @@ import { usePermissionProvider } from '../../../context/PermissionProvider/Permi
 import { ELASTIC_SEARCH_RE_INDEX_PAGE_TABS } from '../../../enums/ElasticSearch.enum';
 import { TeamType } from '../../../generated/entity/teams/team';
 import { useAuth } from '../../../hooks/authHooks';
+import globalSettingsClassBase from '../../../utils/GlobalSettingsClassBase';
 import {
-  getGlobalSettingsMenuWithPermission,
   getSettingPageEntityBreadCrumb,
   SettingMenuItem,
 } from '../../../utils/GlobalSettingsUtils';
@@ -37,6 +37,7 @@ import {
   getSettingsPathWithFqn,
   getTeamsWithFqnPath,
 } from '../../../utils/RouterUtils';
+import '../global-setting-page.style.less';
 
 const GlobalSettingCategoryPage = () => {
   const { t } = useTranslation();
@@ -52,10 +53,9 @@ const GlobalSettingCategoryPage = () => {
   );
 
   const settingCategoryData: SettingMenuItem | undefined = useMemo(() => {
-    let categoryItem = getGlobalSettingsMenuWithPermission(
-      permissions,
-      isAdminUser
-    ).find((item) => item.key === settingCategory);
+    let categoryItem = globalSettingsClassBase
+      .getGlobalSettingsMenuWithPermission(permissions, isAdminUser)
+      .find((item) => item.key === settingCategory);
 
     if (categoryItem) {
       categoryItem = {
@@ -98,7 +98,7 @@ const GlobalSettingCategoryPage = () => {
 
   return (
     <PageLayoutV1 pageTitle={t('label.setting-plural')}>
-      <Row className="page-container" gutter={[0, 20]}>
+      <Row gutter={[0, 20]}>
         <Col span={24}>
           <TitleBreadcrumb titleLinks={breadcrumbs} />
         </Col>
@@ -115,10 +115,11 @@ const GlobalSettingCategoryPage = () => {
         </Col>
 
         <Col span={24}>
-          <Row gutter={[20, 20]}>
+          <Row className={settingCategoryData?.key} gutter={[20, 20]}>
             {settingCategoryData?.items?.map((category) => (
-              <Col key={category?.key} span={6}>
+              <Col key={category?.key} lg={8} md={12} sm={24}>
                 <SettingItemCard
+                  className="global-setting-card"
                   data={category}
                   onClick={handleSettingItemClick}
                 />

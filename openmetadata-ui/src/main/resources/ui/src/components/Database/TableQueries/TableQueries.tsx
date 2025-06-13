@@ -16,16 +16,7 @@ import {
   SortAscendingOutlined,
   SortDescendingOutlined,
 } from '@ant-design/icons';
-import {
-  Button,
-  Col,
-  DatePicker,
-  Pagination,
-  Row,
-  Space,
-  Tooltip,
-  Typography,
-} from 'antd';
+import { Button, Col, DatePicker, Row, Space, Tooltip, Typography } from 'antd';
 import { RangePickerProps } from 'antd/lib/date-picker';
 import { AxiosError } from 'axios';
 import { compare } from 'fast-json-patch';
@@ -33,7 +24,7 @@ import { isEmpty, isUndefined, uniqBy } from 'lodash';
 import Qs from 'qs';
 import React, { FC, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useHistory, useLocation } from 'react-router-dom';
+import { useHistory } from 'react-router-dom';
 import { WILD_CARD_CHAR } from '../../../constants/char.constants';
 import { INITIAL_PAGING_VALUE, PAGE_SIZE } from '../../../constants/constants';
 import { USAGE_DOCS } from '../../../constants/docs.constants';
@@ -50,9 +41,11 @@ import {
   ResourceEntity,
 } from '../../../context/PermissionProvider/PermissionProvider.interface';
 import { ERROR_PLACEHOLDER_TYPE, SORT_ORDER } from '../../../enums/common.enum';
+import { TabSpecificField } from '../../../enums/entity.enum';
 import { SearchIndex } from '../../../enums/search.enum';
 import { Query } from '../../../generated/entity/data/query';
 import { usePaging } from '../../../hooks/paging/usePaging';
+import useCustomLocation from '../../../hooks/useCustomLocation/useCustomLocation';
 import { useFqn } from '../../../hooks/useFqn';
 import {
   getQueryById,
@@ -60,6 +53,7 @@ import {
   updateQueryVote,
 } from '../../../rest/queryAPI';
 import { searchQuery } from '../../../rest/searchAPI';
+import { getEntityName } from '../../../utils/EntityUtils';
 import { DEFAULT_ENTITY_PERMISSION } from '../../../utils/PermissionsUtils';
 import {
   createQueryFilter,
@@ -71,7 +65,9 @@ import { getAddQueryPath } from '../../../utils/RouterUtils';
 import { showErrorToast } from '../../../utils/ToastUtils';
 import ErrorPlaceHolder from '../../common/ErrorWithPlaceholder/ErrorPlaceHolder';
 import Loader from '../../common/Loader/Loader';
+import ResizablePanels from '../../common/ResizablePanels/ResizablePanels';
 import SortingDropDown from '../../Explore/SortingDropDown';
+import PaginationComponent from '../../PaginationComponent/PaginationComponent';
 import SearchDropdown from '../../SearchDropdown/SearchDropdown';
 import { SearchDropdownOption } from '../../SearchDropdown/SearchDropdown.interface';
 import QueryCard from './QueryCard';
@@ -88,7 +84,7 @@ const TableQueries: FC<TableQueriesProp> = ({
   tableId,
 }: TableQueriesProp) => {
   const { t } = useTranslation();
-  const location = useLocation();
+  const location = useCustomLocation();
   const { fqn: datasetFQN } = useFqn();
   const history = useHistory();
 
@@ -149,7 +145,7 @@ const TableQueries: FC<TableQueriesProp> = ({
         selectedQuery.id ?? ''
       );
       setQueryPermissions(permission);
-    } catch (error) {
+    } catch {
       showErrorToast(
         t('server.fetch-entity-permissions-error', {
           entity: t('label.resource-permission-lowercase'),
@@ -190,7 +186,13 @@ const TableQueries: FC<TableQueriesProp> = ({
     try {
       await updateQueryVote(id ?? '', data);
       const response = await getQueryById(id ?? '', {
-        fields: 'owner,votes,tags,queryUsedIn,users',
+        fields: [
+          TabSpecificField.OWNERS,
+          TabSpecificField.VOTES,
+          TabSpecificField.TAGS,
+          TabSpecificField.QUERY_USED_IN,
+          TabSpecificField.USERS,
+        ],
       });
       setSelectedQuery(response);
       setTableQueries((pre) => {
@@ -258,7 +260,7 @@ const TableQueries: FC<TableQueriesProp> = ({
             queries[0]
           : queries[0];
         setSelectedQuery(selectedQueryData);
-        history.push({
+        history.replace({
           search: stringifySearchParams({
             tableId,
             query: selectedQueryData.id,
@@ -280,11 +282,16 @@ const TableQueries: FC<TableQueriesProp> = ({
   };
 
   const fetchTags = async (searchText = WILD_CARD_CHAR) => {
-    return fetchFilterOptions(
+    const data = await fetchFilterOptions(
       searchText,
       'disabled:false AND !classification.name:Tier',
       SearchIndex.TAG
     );
+
+    return data.hits.hits.map((hit) => ({
+      key: hit._source.fullyQualifiedName ?? hit._source.name,
+      label: getEntityName(hit._source),
+    }));
   };
 
   const setTagsDefaultOption = () => {
@@ -305,7 +312,7 @@ const TableQueries: FC<TableQueriesProp> = ({
     try {
       const options = await fetchTags(searchText);
       setTagsFilter((pre) => ({ ...pre, options }));
-    } catch (error) {
+    } catch {
       setTagsFilter((pre) => ({ ...pre, options: [] }));
     } finally {
       setIsTagsLoading(false);
@@ -322,7 +329,7 @@ const TableQueries: FC<TableQueriesProp> = ({
     try {
       const options = await fetchTags();
       setTagsFilter((pre) => ({ ...pre, options, initialOptions: options }));
-    } catch (error) {
+    } catch {
       setTagsFilter((pre) => ({ ...pre, options: [], initialOptions: [] }));
     } finally {
       setIsTagsLoading(false);
@@ -335,10 +342,15 @@ const TableQueries: FC<TableQueriesProp> = ({
   };
 
   const fetchOwner = async (searchText = WILD_CARD_CHAR) => {
-    return fetchFilterOptions(searchText, 'isBot:false', [
+    const data = await fetchFilterOptions(searchText, 'isBot:false', [
       SearchIndex.USER,
       SearchIndex.TEAM,
     ]);
+
+    return data.hits.hits.map((hit) => ({
+      key: hit._source.name,
+      label: getEntityName(hit._source),
+    }));
   };
 
   const setOwnerDefaultOption = () => {
@@ -358,7 +370,7 @@ const TableQueries: FC<TableQueriesProp> = ({
     try {
       const options = await fetchOwner();
       setOwnerFilter((pre) => ({ ...pre, options, initialOptions: options }));
-    } catch (error) {
+    } catch {
       setOwnerFilter((pre) => ({ ...pre, options: [], initialOptions: [] }));
     } finally {
       setIsOwnerLoading(false);
@@ -385,7 +397,7 @@ const TableQueries: FC<TableQueriesProp> = ({
     try {
       const options = await fetchOwner(searchText);
       setOwnerFilter((pre) => ({ ...pre, options }));
-    } catch (error) {
+    } catch {
       setOwnerFilter((pre) => ({ ...pre, options: [] }));
     } finally {
       setIsOwnerLoading(false);
@@ -474,22 +486,23 @@ const TableQueries: FC<TableQueriesProp> = ({
   }
   if (isError.page) {
     return (
-      <div className="flex-center font-medium mt-24" data-testid="no-queries">
-        <ErrorPlaceHolder
-          buttonId="add-query-btn"
-          doc={USAGE_DOCS}
-          heading={t('label.query-lowercase-plural')}
-          permission={permissions?.query.Create}
-          type={ERROR_PLACEHOLDER_TYPE.CREATE}
-          onClick={handleAddQueryClick}
-        />
-      </div>
+      <ErrorPlaceHolder
+        buttonId="add-query-btn"
+        doc={USAGE_DOCS}
+        heading={t('label.query-lowercase-plural')}
+        permission={permissions?.query.Create}
+        permissionValue={t('label.create-entity', {
+          entity: t('label.query'),
+        })}
+        type={ERROR_PLACEHOLDER_TYPE.CREATE}
+        onClick={handleAddQueryClick}
+      />
     );
   }
 
   if (isTableDeleted) {
     return (
-      <div className="flex-center font-medium mt-24" data-testid="no-queries">
+      <div data-testid="no-queries">
         <ErrorPlaceHolder type={ERROR_PLACEHOLDER_TYPE.CUSTOM}>
           {t('message.field-data-is-not-available-for-deleted-entities', {
             field: t('label.query-plural'),
@@ -501,7 +514,7 @@ const TableQueries: FC<TableQueriesProp> = ({
 
   const queryTabBody = isError.search ? (
     <Col
-      className="flex-center font-medium mt-24"
+      className="flex-center font-medium mt-24 p-b-md"
       data-testid="no-queries"
       span={24}>
       <ErrorPlaceHolder>
@@ -531,131 +544,139 @@ const TableQueries: FC<TableQueriesProp> = ({
 
   return (
     <Row className="m-b-md" gutter={8} id="tablequeries" wrap={false}>
-      <Col flex="auto">
-        <Row
-          className="p-x-md m-t-md"
-          data-testid="queries-container"
-          gutter={[8, 16]}>
-          <Col span={24}>
-            <Space className="justify-between w-full">
-              <Space size={16}>
-                <SearchDropdown
-                  hideCounts
-                  isSuggestionsLoading={isOwnerLoading}
-                  label={t('label.owner')}
-                  options={ownerFilter.options}
-                  searchKey="owner"
-                  selectedKeys={ownerFilter.selected}
-                  onChange={handleOwnerFilterChange}
-                  onGetInitialOptions={getInitialOwnerOptions}
-                  onSearch={handleOwnerSearch}
-                />
-
-                <SearchDropdown
-                  hideCounts
-                  isSuggestionsLoading={isTagsLoading}
-                  label={t('label.tag')}
-                  options={tagsFilter.options}
-                  searchKey="tag"
-                  selectedKeys={tagsFilter.selected}
-                  onChange={handleTagsFilterChange}
-                  onGetInitialOptions={getInitialTagsOptions}
-                  onSearch={handleTagsSearch}
-                />
-                <Button
-                  className="p-x-0"
-                  type="text"
-                  onClick={() => {
-                    setIsClickedCalendar(true);
-                  }}>
-                  <span>
-                    <label>{t('label.created-date')}</label>
-                    <DatePicker.RangePicker
-                      allowClear
-                      showNow
-                      bordered={false}
-                      className="p-t-0"
-                      clearIcon={<CloseCircleOutlined />}
-                      data-testid="data-range-picker"
-                      open={isClickedCalendar}
-                      suffixIcon={null}
-                      onChange={onDateChange}
-                      onOpenChange={(isOpen) => {
-                        setIsClickedCalendar(isOpen);
-                      }}
-                    />
-                  </span>
-                </Button>
-              </Space>
-              <Space size={16}>
-                <SortingDropDown
-                  fieldList={QUERY_SORT_OPTIONS}
-                  handleFieldDropDown={handleSortFieldChange}
-                  sortField={sortQuery.field}
-                />
-                <Button
-                  className="p-0"
-                  data-testid="sort-order-button"
-                  type="text"
-                  onClick={() =>
-                    handleSortOderChange(
-                      isAscSortOrder ? SORT_ORDER.DESC : SORT_ORDER.ASC
-                    )
-                  }>
-                  {isAscSortOrder ? (
-                    <SortAscendingOutlined
-                      className="text-base text-grey-muted"
-                      style={{ fontSize: '14px' }}
-                    />
-                  ) : (
-                    <SortDescendingOutlined
-                      className="text-base text-grey-muted"
-                      style={{ fontSize: '14px' }}
-                    />
-                  )}
-                </Button>
-                {addButton}
-              </Space>
-            </Space>
-          </Col>
-
-          {isLoading.query ? (
-            <Loader />
-          ) : (
-            <>
-              {queryTabBody}
-              {showPagination && (
+      <Col className="tab-content-height-with-resizable-panel" span={24}>
+        <ResizablePanels
+          firstPanel={{
+            className: 'entity-resizable-panel-container',
+            allowScroll: true,
+            cardClassName: 'm-x-auto',
+            children: (
+              <Row data-testid="queries-container" gutter={[8, 16]}>
                 <Col span={24}>
-                  <Pagination
-                    hideOnSinglePage
-                    showSizeChanger
-                    className="text-center m-b-sm"
-                    current={currentPage}
-                    data-testid="query-pagination"
-                    pageSize={pageSize}
-                    pageSizeOptions={[10, 25, 50]}
-                    total={paging.total}
-                    onChange={pagingHandler}
-                    onShowSizeChange={handlePageSizeChange}
-                  />
+                  <Space className="justify-between w-full">
+                    <Space size={16}>
+                      <SearchDropdown
+                        hideCounts
+                        isSuggestionsLoading={isOwnerLoading}
+                        label={t('label.owner')}
+                        options={ownerFilter.options}
+                        searchKey="owner"
+                        selectedKeys={ownerFilter.selected}
+                        onChange={handleOwnerFilterChange}
+                        onGetInitialOptions={getInitialOwnerOptions}
+                        onSearch={handleOwnerSearch}
+                      />
+
+                      <SearchDropdown
+                        hideCounts
+                        isSuggestionsLoading={isTagsLoading}
+                        label={t('label.tag')}
+                        options={tagsFilter.options}
+                        searchKey="tag"
+                        selectedKeys={tagsFilter.selected}
+                        onChange={handleTagsFilterChange}
+                        onGetInitialOptions={getInitialTagsOptions}
+                        onSearch={handleTagsSearch}
+                      />
+                      <Button
+                        className="p-x-0"
+                        type="text"
+                        onClick={() => {
+                          setIsClickedCalendar(true);
+                        }}>
+                        <span>
+                          <label>{t('label.created-date')}</label>
+                          <DatePicker.RangePicker
+                            allowClear
+                            showNow
+                            bordered={false}
+                            className="p-t-0"
+                            clearIcon={<CloseCircleOutlined />}
+                            data-testid="data-range-picker"
+                            open={isClickedCalendar}
+                            suffixIcon={null}
+                            onChange={onDateChange}
+                            onOpenChange={(isOpen) => {
+                              setIsClickedCalendar(isOpen);
+                            }}
+                          />
+                        </span>
+                      </Button>
+                    </Space>
+                    <Space size={16}>
+                      <SortingDropDown
+                        fieldList={QUERY_SORT_OPTIONS}
+                        handleFieldDropDown={handleSortFieldChange}
+                        sortField={sortQuery.field}
+                      />
+                      <Button
+                        className="p-0"
+                        data-testid="sort-order-button"
+                        type="text"
+                        onClick={() =>
+                          handleSortOderChange(
+                            isAscSortOrder ? SORT_ORDER.DESC : SORT_ORDER.ASC
+                          )
+                        }>
+                        {isAscSortOrder ? (
+                          <SortAscendingOutlined
+                            className="text-base text-grey-muted"
+                            style={{ fontSize: '14px' }}
+                          />
+                        ) : (
+                          <SortDescendingOutlined className="text-sm text-grey-muted" />
+                        )}
+                      </Button>
+                      {addButton}
+                    </Space>
+                  </Space>
                 </Col>
-              )}
-            </>
-          )}
-        </Row>
+
+                {isLoading.query ? (
+                  <Loader />
+                ) : (
+                  <>
+                    {queryTabBody}
+                    {showPagination && (
+                      <Col span={24}>
+                        <PaginationComponent
+                          hideOnSinglePage
+                          showSizeChanger
+                          className="text-center m-b-sm"
+                          current={currentPage}
+                          data-testid="query-pagination"
+                          pageSize={pageSize}
+                          pageSizeOptions={[10, 25, 50]}
+                          total={paging.total}
+                          onChange={pagingHandler}
+                          onShowSizeChange={handlePageSizeChange}
+                        />
+                      </Col>
+                    )}
+                  </>
+                )}
+              </Row>
+            ),
+            minWidth: 800,
+            flex: 0.87,
+          }}
+          hideSecondPanel={!selectedQuery}
+          secondPanel={{
+            children: selectedQuery && (
+              <TableQueryRightPanel
+                isLoading={isLoading.rightPanel}
+                permission={queryPermissions}
+                query={selectedQuery}
+                onQueryUpdate={handleQueryUpdate}
+              />
+            ),
+            minWidth: 400,
+            flex: 0.13,
+            className:
+              'entity-summary-resizable-right-panel-container entity-resizable-panel-container',
+          }}
+        />
       </Col>
-      {selectedQuery && (
-        <Col flex="400px">
-          <div className="sticky top-0">
-            <TableQueryRightPanel
-              isLoading={isLoading.rightPanel}
-              permission={queryPermissions}
-              query={selectedQuery}
-              onQueryUpdate={handleQueryUpdate}
-            />
-          </div>
-        </Col>
-      )}
     </Row>
   );
 };

@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -46,7 +46,7 @@ with open(mock_file_path, encoding="UTF-8") as file:
 MOCK_DASHBOARD_SERVICE = DashboardService(
     id="c3eb265f-5445-4ad3-ba5e-797d3a3071bb",
     name="quicksight_source_test",
-    fullyQualifiedName=FullyQualifiedEntityName(__root__="quicksight_source_test"),
+    fullyQualifiedName=FullyQualifiedEntityName("quicksight_source_test"),
     connection=DashboardConnection(),
     serviceType=DashboardServiceType.QuickSight,
 )
@@ -106,7 +106,7 @@ EXPECTED_DASHBOARD = CreateDashboardRequest(
     sourceUrl="https://us-east-2.quicksight.aws.amazon.com/sn/dashboards/552315335",
     charts=[],
     tags=None,
-    owner=None,
+    owners=None,
     service="quicksight_source_test",
     extension=None,
 )
@@ -118,7 +118,7 @@ EXPECTED_DASHBOARDS = [
         chartType="Other",
         sourceUrl="https://us-east-2.quicksight.aws.amazon.com/sn/dashboards/552315335",
         tags=None,
-        owner=None,
+        owners=None,
         service="quicksight_source_test",
     ),
     CreateChartRequest(
@@ -127,7 +127,7 @@ EXPECTED_DASHBOARDS = [
         chartType="Other",
         sourceUrl="https://us-east-2.quicksight.aws.amazon.com/sn/dashboards/552315335",
         tags=None,
-        owner=None,
+        owners=None,
         service="quicksight_source_test",
     ),
     CreateChartRequest(
@@ -136,7 +136,7 @@ EXPECTED_DASHBOARDS = [
         chartType="Other",
         sourceUrl="https://us-east-2.quicksight.aws.amazon.com/sn/dashboards/552315335",
         tags=None,
-        owner=None,
+        owners=None,
         service="quicksight_source_test",
     ),
 ]
@@ -154,7 +154,7 @@ class QuickSightUnitTest(TestCase):
     def __init__(self, methodName, test_connection) -> None:
         super().__init__(methodName)
         test_connection.return_value = False
-        self.config = OpenMetadataWorkflowConfig.parse_obj(mock_quicksight_config)
+        self.config = OpenMetadataWorkflowConfig.model_validate(mock_quicksight_config)
         self.quicksight = QuicksightSource.create(
             mock_quicksight_config["source"],
             self.config.workflowConfig.openMetadataServerConfig,
@@ -164,10 +164,10 @@ class QuickSightUnitTest(TestCase):
         )
         self.quicksight.context.get().__dict__[
             "dashboard"
-        ] = MOCK_DASHBOARD.fullyQualifiedName.__root__
+        ] = MOCK_DASHBOARD.fullyQualifiedName.root
         self.quicksight.context.get().__dict__[
             "dashboard_service"
-        ] = MOCK_DASHBOARD_SERVICE.fullyQualifiedName.__root__
+        ] = MOCK_DASHBOARD_SERVICE.fullyQualifiedName.root
 
     @pytest.mark.order(1)
     def test_dashboard(self):

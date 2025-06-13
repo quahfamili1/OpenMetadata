@@ -24,8 +24,9 @@ import {
   screen,
   waitForElementToBeRemoved,
 } from '@testing-library/react';
-import React, { ReactNode } from 'react';
+import React from 'react';
 import { deleteTag, getAllClassifications } from '../../rest/tagAPI';
+import { checkPermission } from '../../utils/PermissionsUtils';
 import { getClassifications } from '../../utils/TagsUtils';
 import TagsPage from './TagsPage';
 import {
@@ -38,12 +39,15 @@ import {
 
 jest.useRealTimers();
 
+jest.mock('../../hooks/useCustomLocation/useCustomLocation', () => {
+  return jest.fn().mockImplementation(() => ({
+    pathname: '/my-data',
+  }));
+});
+
 jest.mock('react-router-dom', () => ({
   useHistory: jest.fn().mockImplementation(() => ({
     push: jest.fn(),
-  })),
-  useLocation: jest.fn().mockImplementation(() => ({
-    pathname: '/my-data',
   })),
   useParams: jest.fn().mockReturnValue({
     entityTypeFQN: 'entityTypeFQN',
@@ -227,27 +231,30 @@ jest.mock('../../utils/TagsUtils', () => ({
     .mockImplementation(() => <a href="/">Usage Count</a>),
 }));
 
-jest.mock('../../components/PageLayoutV1/PageLayoutV1', () =>
-  jest
-    .fn()
-    .mockImplementation(
-      ({
-        children,
-        leftPanel,
-      }: {
-        children: ReactNode;
-        leftPanel: ReactNode;
-      }) => (
-        <div data-testid="PageLayoutV1">
-          <div data-testid="left-panel-content">{leftPanel}</div>
-          {children}
-        </div>
-      )
-    )
+jest.mock('../../components/common/ResizablePanels/ResizableLeftPanels', () =>
+  jest.fn().mockImplementation(({ firstPanel, secondPanel }) => (
+    <div>
+      {firstPanel.children}
+      {secondPanel.children}
+    </div>
+  ))
 );
 
+jest.mock('../../hoc/withPageLayout', () => ({
+  withPageLayout: jest.fn().mockImplementation(
+    () =>
+      (Component: React.FC) =>
+      (
+        props: JSX.IntrinsicAttributes & {
+          children?: React.ReactNode | undefined;
+        }
+      ) =>
+        <Component {...props} />
+  ),
+}));
+
 jest.mock(
-  '../../components/common/RichTextEditor/RichTextEditorPreviewer',
+  '../../components/common/RichTextEditor/RichTextEditorPreviewerV1',
   () => {
     return jest.fn().mockReturnValue(<p>RichTextEditorPreviewer</p>);
   }
@@ -282,7 +289,7 @@ describe('Test TagsPage page', () => {
       render(<TagsPage />);
     });
     const tagsComponent = await screen.findByTestId('tags-container');
-    const leftPanelContent = await screen.findByTestId('left-panel-content');
+    const leftPanelContent = await screen.findByTestId('tags-left-panel');
     const header = await screen.findByTestId('header');
     const descriptionContainer = await screen.findByTestId(
       'description-container'
@@ -304,7 +311,7 @@ describe('Test TagsPage page', () => {
     render(<TagsPage />);
     await waitForElementToBeRemoved(() => screen.getByTestId('loader'));
 
-    const leftPanelContent = screen.getByTestId('left-panel-content');
+    const leftPanelContent = screen.getByTestId('tags-left-panel');
     const sidePanelCategories = await screen.findAllByTestId(
       'side-panel-classification'
     );
@@ -457,7 +464,7 @@ describe('Test TagsPage page', () => {
 
     const tagsComponent = screen.getByTestId('tags-container');
     const header = screen.getByTestId('header');
-    const leftPanelContent = screen.getByTestId('left-panel-content');
+    const leftPanelContent = screen.getByTestId('tags-left-panel');
     const editIcon = screen.getByTestId('name-edit-icon');
     const tagCategoryName = screen.getByTestId('classification-name');
 
@@ -504,17 +511,25 @@ describe('Test TagsPage page', () => {
     });
 
     act(async () => {
-      const tagEditIcon = await findAllByTestId(container, 'tag-edit-icon');
+      const tagEditIcon = await findAllByTestId(container, 'edit-button');
 
       expect(tagEditIcon[0]).toBeInTheDocument();
 
       fireEvent.click(tagEditIcon[0]);
     });
 
-    const tagName = await screen.findByText('test_tag');
+    const tagName = screen.getByTestId('test_tag');
 
     expect(tagName).toBeInTheDocument();
     expect(tagsComponent).toBeInTheDocument();
+  });
+
+  it("Should not render add classification button if doesn't have create permission", async () => {
+    (checkPermission as jest.Mock).mockReturnValueOnce(false);
+
+    render(<TagsPage />);
+
+    expect(screen.queryByTestId('add-classification')).not.toBeInTheDocument();
   });
 
   describe('Render Sad Paths', () => {

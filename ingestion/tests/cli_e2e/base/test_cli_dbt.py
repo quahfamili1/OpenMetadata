@@ -1,8 +1,8 @@
 #  Copyright 2022 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -59,8 +59,8 @@ class CliDBTBase(TestCase):
                 self.assertIsNotNone(data_model.upstream)
                 self.assertIsNotNone(data_model.description)
                 self.assertIsNotNone(table.description)
-                self.assertIsNotNone(data_model.owner)
-                self.assertIsNotNone(table.owner)
+                self.assertIsNotNone(data_model.owners)
+                self.assertIsNotNone(table.owners)
                 self.assertTrue(len(data_model.tags) > 0)
                 self.assertTrue(len(table.tags) > 0)
 

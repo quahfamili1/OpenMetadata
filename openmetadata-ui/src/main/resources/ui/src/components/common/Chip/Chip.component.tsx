@@ -10,24 +10,31 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-import { Col, Popover, Row, Space, Tag, Typography } from 'antd';
+import { Col, Row, Tag, Typography } from 'antd';
 import { isEmpty } from 'lodash';
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import {
   NO_DATA_PLACEHOLDER,
   USER_DATA_SIZE,
 } from '../../../constants/constants';
 import { EntityReference } from '../../../generated/entity/type';
+import entityUtilClassBase from '../../../utils/EntityUtilClassBase';
 import { getEntityName } from '../../../utils/EntityUtils';
 import { ChipProps } from './Chip.interface';
+import './chip.less';
 
 const Chip = ({
   data,
   icon,
+  entityType,
   noDataPlaceholder,
   showNoDataPlaceholder = true,
 }: ChipProps) => {
   const [listLength, setListLength] = useState<number>(0);
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
+  const { t } = useTranslation();
 
   const hasMoreElement = useMemo(
     () => listLength > USER_DATA_SIZE,
@@ -35,14 +42,21 @@ const Chip = ({
   );
 
   const getChipElement = (item: EntityReference) => (
-    <Col
-      className="d-flex gap-1 items-center"
-      data-testid={item.name}
-      key={item.name}>
-      {icon}
-      <Typography.Text className="text-left">
-        {getEntityName(item)}
-      </Typography.Text>
+    <Col data-testid="tag-chip" key={item.name}>
+      <Link
+        className="chip-tag-link"
+        data-testid={`${item.name}-link`}
+        to={entityUtilClassBase.getEntityLink(
+          entityType,
+          item.fullyQualifiedName ?? ''
+        )}>
+        {icon}
+        <Typography.Text
+          className="text-left chip-tag-link chip-name"
+          ellipsis={{ tooltip: getEntityName(item) }}>
+          {getEntityName(item)}
+        </Typography.Text>
+      </Link>
     </Col>
   );
 
@@ -52,7 +66,7 @@ const Chip = ({
 
   if (isEmpty(data) && showNoDataPlaceholder) {
     return (
-      <Typography.Paragraph className="text-grey-muted m-b-0">
+      <Typography.Paragraph className="m-t-xs text-sm no-data-chip-placeholder">
         {noDataPlaceholder ?? NO_DATA_PLACEHOLDER}
       </Typography.Paragraph>
     );
@@ -61,24 +75,19 @@ const Chip = ({
   return (
     <Row
       wrap
-      className="align-middle"
+      className="align-middle d-flex flex-col flex-start justify-center chip-container"
       data-testid="chip-container"
-      gutter={[20, 6]}>
-      {data.slice(0, USER_DATA_SIZE).map(getChipElement)}
+      gutter={[20, 0]}>
+      {(isExpanded ? data : data.slice(0, USER_DATA_SIZE)).map(getChipElement)}
       {hasMoreElement && (
-        <Popover
-          className="cursor-pointer"
-          content={
-            <Space wrap size={6}>
-              {data.slice(USER_DATA_SIZE).map(getChipElement)}
-            </Space>
-          }
-          overlayClassName="w-56"
-          trigger="click">
-          <Tag className="m-l-xss" data-testid="plus-more-count">{`+${
-            listLength - USER_DATA_SIZE
-          } more`}</Tag>
-        </Popover>
+        <Tag
+          className="m-l-xss chip-text cursor-pointer"
+          data-testid="plus-more-count"
+          onClick={() => setIsExpanded(!isExpanded)}>
+          {isExpanded
+            ? t('label.show-less')
+            : `+${listLength - USER_DATA_SIZE} more`}
+        </Tag>
       )}
     </Row>
   );

@@ -21,11 +21,11 @@ const mockTestSuite = {
   id: '58e37b60-aa4f-4228-8cb7-89fe659fa14b',
   name: 'sample_data.ecommerce_db.shopify.dim_address.testSuite',
   fullyQualifiedName: 'sample_data.ecommerce_db.shopify.dim_address.testSuite',
-  description: 'This is an executable test suite linked to an entity',
+  description: 'This is an basic test suite linked to an entity',
   serviceType: 'TestSuite',
   deleted: false,
-  executable: true,
-  executableEntityReference: {
+  basic: true,
+  basicEntityReference: {
     id: '8f7c814f-d6ca-4ce2-911e-d7f3586c955b',
     type: 'table',
     name: 'dim_address',
@@ -33,6 +33,19 @@ const mockTestSuite = {
   },
   testCaseResultSummary: [],
 };
+
+jest.mock('../../hoc/withPageLayout', () => ({
+  withPageLayout: jest.fn().mockImplementation(
+    () =>
+      (Component: React.FC) =>
+      (
+        props: JSX.IntrinsicAttributes & {
+          children?: React.ReactNode | undefined;
+        }
+      ) =>
+        <Component {...props} />
+  ),
+}));
 
 jest.mock('../../hooks/useFqn', () => {
   return {
@@ -74,6 +87,9 @@ jest.mock('../../components/common/ResizablePanels/ResizablePanels', () =>
 jest.mock('../../components/common/ErrorWithPlaceholder/ErrorPlaceHolder', () =>
   jest.fn().mockReturnValue(<div>ErrorPlaceHolder.component</div>)
 );
+jest.mock('../../components/common/Loader/Loader', () =>
+  jest.fn().mockReturnValue(<div>Loader.component</div>)
+);
 jest.mock(
   '../../components/common/TitleBreadcrumb/TitleBreadcrumb.component',
   () => jest.fn().mockReturnValue(<div>TitleBreadcrumb.component</div>)
@@ -104,10 +120,19 @@ describe('TestSuiteIngestionPage', () => {
     expect(
       await screen.findByText('TitleBreadcrumb.component')
     ).toBeInTheDocument();
-    expect(
-      await screen.findByText('TestSuiteIngestion.component')
-    ).toBeInTheDocument();
     expect(await screen.findByText('RightPanel.component')).toBeInTheDocument();
+  });
+
+  it('should render loading state', async () => {
+    (getTestSuiteByName as jest.Mock).mockResolvedValueOnce(mockTestSuite);
+
+    await act(async () => {
+      render(<TestSuiteIngestionPage />);
+
+      expect(screen.getByText('Loader.component')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Loader.component')).not.toBeInTheDocument();
   });
 
   it('should render error placeholder', async () => {
@@ -136,16 +161,5 @@ describe('TestSuiteIngestionPage', () => {
     });
 
     expect(getIngestionPipelineByFqn).toHaveBeenCalledWith('ingestionFQN');
-  });
-
-  it('should go back on back button click', async () => {
-    await act(async () => {
-      render(<TestSuiteIngestionPage />);
-    });
-
-    const backButton = screen.getByTestId('back-btn');
-    backButton.click();
-
-    expect(mockUseHistory.goBack).toHaveBeenCalled();
   });
 });

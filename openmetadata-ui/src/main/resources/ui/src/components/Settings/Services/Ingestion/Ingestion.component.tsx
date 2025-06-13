@@ -11,263 +11,261 @@
  *  limitations under the License.
  */
 
-import { Alert, Col, Row } from 'antd';
-import { AxiosError } from 'axios';
-import classNames from 'classnames';
-import { isEmpty, isUndefined, lowerCase } from 'lodash';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { DISABLED } from '../../../../constants/constants';
-import { usePermissionProvider } from '../../../../context/PermissionProvider/PermissionProvider';
+import { ReloadOutlined } from '@ant-design/icons';
 import {
-  IngestionServicePermission,
-  ResourceEntity,
-} from '../../../../context/PermissionProvider/PermissionProvider.interface';
-import { IngestionPipeline } from '../../../../generated/entity/services/ingestionPipelines/ingestionPipeline';
-import { useAirflowStatus } from '../../../../hooks/useAirflowStatus';
-import { showErrorToast } from '../../../../utils/ToastUtils';
+  Button,
+  Col,
+  Radio,
+  RadioChangeEvent,
+  Row,
+  Tooltip,
+  Typography,
+} from 'antd';
+import { isUndefined } from 'lodash';
+import React, { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useHistory, useParams } from 'react-router-dom';
+import { ReactComponent as MetadataAgentIcon } from '../../../../assets/svg/ic-collapse.svg';
+import { ReactComponent as CollateAI } from '../../../../assets/svg/ic-suggestions.svg';
+import {
+  ServiceAgentSubTabs,
+  ServiceCategory,
+} from '../../../../enums/service.enum';
+import { useFqn } from '../../../../hooks/useFqn';
+import { getCountBadge } from '../../../../utils/CommonUtils';
+import { getTypeAndStatusMenuItems } from '../../../../utils/IngestionUtils';
+import { getServiceDetailsPath } from '../../../../utils/RouterUtils';
+import serviceUtilClassBase from '../../../../utils/ServiceUtilClassBase';
 import ErrorPlaceHolderIngestion from '../../../common/ErrorWithPlaceholder/ErrorPlaceHolderIngestion';
 import Searchbar from '../../../common/SearchBarComponent/SearchBar.component';
-import ButtonSkeleton from '../../../common/Skeleton/CommonSkeletons/ControlElements/ControlElements.component';
-import EntityDeleteModal from '../../../Modals/EntityDeleteModal/EntityDeleteModal';
-import AddIngestionButton from './AddIngestionButton.component';
-import { IngestionProps, SelectedRowDetails } from './ingestion.interface';
-import IngestionListTable from './IngestionListTable.component';
+import SearchDropdown from '../../../SearchDropdown/SearchDropdown';
+import { IngestionProps } from './ingestion.interface';
+import './ingestion.less';
 
 const Ingestion: React.FC<IngestionProps> = ({
-  airflowEndpoint,
-  serviceName,
-  serviceCategory,
   serviceDetails,
-  ingestionList,
-  isRequiredDetailsAvailable,
-  deleteIngestion,
-  triggerIngestion,
-  deployIngestion,
-  paging,
-  handleEnableDisableIngestion,
+  ingestionPipelineList,
+  ingestionPagingInfo,
   onIngestionWorkflowsUpdate,
-  permissions,
   pipelineType,
-  displayAddIngestionButton = true,
-  handleIngestionDataChange,
-  pipelineNameColWidth,
-  containerClassName,
-  isAirflowAvailable = true,
   isLoading,
+  handleIngestionListUpdate,
+  searchText,
+  handleSearchChange,
+  onPageChange,
+  airflowInformation,
+  handleTypeFilterChange,
+  handleStatusFilterChange,
+  statusFilter,
+  typeFilter,
+  isCollateAgentLoading,
+  collateAgentsList,
+  collateAgentPagingInfo,
+  onCollateAgentPageChange,
+  agentCounts,
+  refreshAgentsList,
+  workflowStartAt,
 }: IngestionProps) => {
   const { t } = useTranslation();
-  const { getEntityPermissionByFqn } = usePermissionProvider();
-  const { isFetchingStatus, platform } = useAirflowStatus();
-  const [searchText, setSearchText] = useState('');
-  const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState(false);
-  const [deleteSelection, setDeleteSelection] = useState<SelectedRowDetails>({
-    id: '',
-    name: '',
-    state: '',
-  });
+  const history = useHistory();
+  const { fqn: decodedServiceFQN } = useFqn();
+  const { serviceCategory, tab, subTab } = useParams<{
+    serviceCategory: ServiceCategory;
+    tab: string;
+    subTab: string;
+  }>();
 
-  const handleDeleteSelection = useCallback(
-    (row: SelectedRowDetails) => setDeleteSelection(row),
-    [setDeleteSelection]
+  const { typeMenuItems, statusMenuItems } = useMemo(
+    () => getTypeAndStatusMenuItems(),
+    []
+  );
+  const isDBService = useMemo(
+    () => serviceCategory === ServiceCategory.DATABASE_SERVICES,
+    [serviceCategory]
+  );
+  const [statusFilters, setStatusFilters] =
+    useState<Array<{ key: string; label: string }>>(statusMenuItems);
+  const [typeFilters, setTypeFilters] =
+    useState<Array<{ key: string; label: string }>>(typeMenuItems);
+
+  const { CollateAIAgentsWidget, MetadataAgentsWidget } = useMemo(
+    () => serviceUtilClassBase.getAgentsTabWidgets(),
+    [serviceCategory]
+  );
+  const isCollateAIWidgetSupported = useMemo(
+    () => !isUndefined(CollateAIAgentsWidget) && isDBService,
+    [CollateAIAgentsWidget, isDBService]
   );
 
-  const handleIsConfirmationModalOpen = useCallback(
-    (value: boolean) => setIsConfirmationModalOpen(value),
-    [setDeleteSelection]
+  const isCollateSubTabSelected = subTab === ServiceAgentSubTabs.COLLATE_AI;
+
+  const { isAirflowAvailable } = useMemo(
+    () => airflowInformation,
+    [airflowInformation]
   );
 
-  const handleSearchAction = (searchValue: string) => {
-    setSearchText(searchValue);
-  };
-
-  const [ingestionData, setIngestionData] =
-    useState<Array<IngestionPipeline>>(ingestionList);
-  const [ingestionPipelinesPermission, setIngestionPipelinesPermission] =
-    useState<IngestionServicePermission>();
-
-  const fetchIngestionPipelinesPermission = async () => {
-    try {
-      const promises = ingestionList.map((item) =>
-        getEntityPermissionByFqn(ResourceEntity.INGESTION_PIPELINE, item.name)
-      );
-      const response = await Promise.allSettled(promises);
-
-      const permissionData = response.reduce((acc, cv, index) => {
-        return {
-          ...acc,
-          [ingestionList?.[index].name]:
-            cv.status === 'fulfilled' ? cv.value : {},
-        };
-      }, {});
-
-      setIngestionPipelinesPermission(permissionData);
-    } catch (error) {
-      showErrorToast(error as AxiosError);
-    }
-  };
-
-  const handleCancelConfirmationModal = () => {
-    setIsConfirmationModalOpen(false);
-    setDeleteSelection({
-      id: '',
-      name: '',
-      state: '',
-    });
-  };
-
-  const handleDelete = async (id: string, displayName: string) => {
-    setDeleteSelection({ id, name: displayName, state: 'waiting' });
-    try {
-      await deleteIngestion(id, displayName);
-
-      setTimeout(() => {
-        setDeleteSelection({ id, name: displayName, state: 'success' });
-        handleCancelConfirmationModal();
-      }, 500);
-    } catch (error) {
-      handleCancelConfirmationModal();
-    }
-  };
-
-  const getSearchedIngestions = () => {
-    const sText = lowerCase(searchText);
-    const data = sText
-      ? ingestionList.filter(
-          (ing) =>
-            lowerCase(ing.displayName).includes(sText) ||
-            lowerCase(ing.name).includes(sText)
+  const handleStatusFilterSearch = useCallback(
+    (searchValue: string) => {
+      setStatusFilters(
+        statusMenuItems.filter((item) =>
+          item.label.toLowerCase().includes(searchValue.toLowerCase())
         )
-      : ingestionList;
-
-    setIngestionData(data);
-    !isUndefined(handleIngestionDataChange) && handleIngestionDataChange(data);
-  };
-
-  const showAddIngestionButton = useMemo(
-    () =>
-      isRequiredDetailsAvailable &&
-      permissions.EditAll &&
-      displayAddIngestionButton &&
-      platform !== DISABLED,
-    [
-      isRequiredDetailsAvailable,
-      permissions,
-      displayAddIngestionButton,
-      platform,
-    ]
+      );
+    },
+    [statusMenuItems]
   );
 
-  const renderAddIngestionButton = useMemo(() => {
-    if (isFetchingStatus) {
-      return <ButtonSkeleton size="default" />;
-    }
-
-    if (showAddIngestionButton) {
-      return (
-        <AddIngestionButton
-          ingestionData={ingestionData}
-          ingestionList={ingestionList}
-          permissions={permissions}
-          pipelineType={pipelineType}
-          serviceCategory={serviceCategory}
-          serviceDetails={serviceDetails}
-          serviceName={serviceName}
-        />
+  const handleTypeFilterSearch = useCallback(
+    (searchValue: string) => {
+      setTypeFilters(
+        typeMenuItems.filter((item) =>
+          item.label.toLowerCase().includes(searchValue.toLowerCase())
+        )
       );
-    }
+    },
+    [typeMenuItems]
+  );
 
-    return null;
-  }, [
-    isFetchingStatus,
-    showAddIngestionButton,
-    ingestionData,
-    ingestionList,
-    permissions,
-    pipelineType,
-    serviceCategory,
-    serviceDetails,
-    serviceName,
-  ]);
+  const handleSubTabChange = useCallback(
+    (e: RadioChangeEvent) => {
+      const key = e.target.value;
 
-  useEffect(() => {
-    getSearchedIngestions();
-  }, [searchText, ingestionList]);
+      history.replace({
+        pathname: getServiceDetailsPath(
+          decodedServiceFQN,
+          serviceCategory,
+          tab,
+          key
+        ),
+      });
+    },
+    [history, decodedServiceFQN, serviceCategory, tab]
+  );
 
-  useEffect(() => {
-    fetchIngestionPipelinesPermission();
-  }, [ingestionList]);
+  const subTabOptions = useMemo(() => {
+    return Object.values(ServiceAgentSubTabs).map((tabName) => {
+      const Icon =
+        tabName === ServiceAgentSubTabs.COLLATE_AI
+          ? CollateAI
+          : MetadataAgentIcon;
+      const label =
+        tabName === ServiceAgentSubTabs.COLLATE_AI
+          ? t('label.collate-ai')
+          : t('label.metadata');
 
-  const getIngestionTab = () => {
-    return (
-      <Row
-        className={classNames('mt-4', containerClassName ?? '')}
-        data-testid="ingestion-details-container">
-        <Col span={24}>
-          {!isRequiredDetailsAvailable && (
-            <Alert
-              showIcon
-              className="mb-4"
-              message={t('message.no-service-connection-details-message', {
-                serviceName,
-              })}
-              type="error"
-            />
-          )}
-        </Col>
-        <Col className="d-flex justify-between" span={24}>
-          <div className="w-max-400 w-full">
-            {searchText || !isEmpty(ingestionData) ? (
-              <Searchbar
-                placeholder={`${t('message.search-for-ingestion')}...`}
-                searchValue={searchText}
-                typingInterval={500}
-                onSearch={handleSearchAction}
-              />
-            ) : null}
+      return {
+        label: (
+          <div className="tab-label" data-testid={`${tabName}-sub-tab`}>
+            <Icon height={14} width={14} />
+            <Typography.Text>{label}</Typography.Text>
+            {getCountBadge(
+              agentCounts?.[tabName],
+              'flex-center h-5',
+              subTab === tabName
+            )}
           </div>
-          <div className="relative">{renderAddIngestionButton}</div>
-        </Col>
-        <Col span={24}>
-          <IngestionListTable
-            airflowEndpoint={airflowEndpoint}
-            deleteSelection={deleteSelection}
-            deployIngestion={deployIngestion}
-            handleDeleteSelection={handleDeleteSelection}
-            handleEnableDisableIngestion={handleEnableDisableIngestion}
-            handleIsConfirmationModalOpen={handleIsConfirmationModalOpen}
-            ingestionData={ingestionData}
-            ingestionPipelinesPermission={ingestionPipelinesPermission}
-            isLoading={isLoading}
-            isRequiredDetailsAvailable={isRequiredDetailsAvailable}
-            paging={paging}
-            permissions={permissions}
-            pipelineNameColWidth={pipelineNameColWidth}
-            pipelineType={pipelineType}
-            serviceCategory={serviceCategory}
-            serviceName={serviceName}
-            triggerIngestion={triggerIngestion}
-            onIngestionWorkflowsUpdate={onIngestionWorkflowsUpdate}
-          />
-        </Col>
-      </Row>
-    );
-  };
+        ),
+        value: tabName,
+      };
+    });
+  }, [subTab, agentCounts]);
 
   if (!isAirflowAvailable) {
     return <ErrorPlaceHolderIngestion />;
   }
 
   return (
-    <div data-testid="ingestion-container">
-      {getIngestionTab()}
-      <EntityDeleteModal
-        entityName={deleteSelection.name}
-        entityType={t('label.ingestion-lowercase')}
-        visible={isConfirmationModalOpen}
-        onCancel={handleCancelConfirmationModal}
-        onConfirm={() => handleDelete(deleteSelection.id, deleteSelection.name)}
-      />
+    <div className="agents-tab" data-testid="ingestion-details-container">
+      <Row justify="space-between">
+        <Col>
+          {isCollateAIWidgetSupported && (
+            <Radio.Group
+              buttonStyle="solid"
+              className="agents-sub-tabs-switch"
+              data-testid="agents-sub-tabs-switch"
+              optionType="button"
+              options={subTabOptions}
+              size="large"
+              value={subTab}
+              onChange={handleSubTabChange}
+            />
+          )}
+        </Col>
+
+        <Col className="flex items-center gap-2">
+          <Tooltip
+            title={t('label.refresh-entity', {
+              entity: t('label.agent-plural'),
+            })}>
+            <Button
+              className="reload-button"
+              icon={<ReloadOutlined className="reload-button-icon" />}
+              size="large"
+              onClick={() => refreshAgentsList(subTab as ServiceAgentSubTabs)}
+            />
+          </Tooltip>
+          {!isCollateSubTabSelected && (
+            <>
+              <SearchDropdown
+                hideCounts
+                label={t('label.status')}
+                options={statusFilters}
+                searchKey="status"
+                selectedKeys={statusFilter ?? []}
+                triggerButtonSize="large"
+                onChange={handleStatusFilterChange}
+                onSearch={handleStatusFilterSearch}
+              />
+              <SearchDropdown
+                hideCounts
+                label={t('label.type')}
+                options={typeFilters}
+                searchKey="status"
+                selectedKeys={typeFilter ?? []}
+                triggerButtonSize="large"
+                onChange={handleTypeFilterChange}
+                onSearch={handleTypeFilterSearch}
+              />
+
+              <div className="search-bar-container">
+                <Searchbar
+                  removeMargin
+                  inputClassName="p-x-sm p-y-xs border-radius-xs"
+                  placeholder={t('label.search')}
+                  searchValue={searchText}
+                  typingInterval={500}
+                  onSearch={handleSearchChange}
+                />
+              </div>
+            </>
+          )}
+        </Col>
+      </Row>
+
+      {isCollateSubTabSelected ? (
+        <CollateAIAgentsWidget
+          collateAgentPagingInfo={collateAgentPagingInfo}
+          collateAgentsList={collateAgentsList}
+          isCollateAgentLoading={isCollateAgentLoading}
+          serviceDetails={serviceDetails}
+          workflowStartAt={workflowStartAt}
+          onCollateAgentPageChange={onCollateAgentPageChange}
+        />
+      ) : (
+        <MetadataAgentsWidget
+          airflowInformation={airflowInformation}
+          handleIngestionListUpdate={handleIngestionListUpdate}
+          ingestionPagingInfo={ingestionPagingInfo}
+          ingestionPipelineList={ingestionPipelineList}
+          isLoading={isLoading}
+          pipelineType={pipelineType}
+          searchText={searchText}
+          serviceDetails={serviceDetails}
+          serviceName={decodedServiceFQN}
+          onIngestionWorkflowsUpdate={onIngestionWorkflowsUpdate}
+          onPageChange={onPageChange}
+        />
+      )}
     </div>
   );
 };

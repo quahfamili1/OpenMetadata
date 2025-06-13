@@ -45,11 +45,13 @@ jest.mock(
 jest.mock('../../components/common/Loader/Loader', () => {
   return jest.fn().mockImplementation(() => <div>Loader</div>);
 });
+jest.mock('../../hooks/useCustomLocation/useCustomLocation', () => {
+  return jest.fn().mockImplementation(() => ({ search: '' }));
+});
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
   useParams: jest.fn().mockImplementation(() => mockUseParams),
   useHistory: jest.fn().mockReturnValue({ push: jest.fn() }),
-  useLocation: jest.fn().mockReturnValue({ search: '' }),
 }));
 jest.mock('../../rest/tableAPI', () => ({
   getTableDetailsByFQN: jest
@@ -58,6 +60,18 @@ jest.mock('../../rest/tableAPI', () => ({
 }));
 jest.mock('../../rest/customMetricAPI', () => ({
   putCustomMetric: jest.fn(),
+}));
+jest.mock('../../hoc/withPageLayout', () => ({
+  withPageLayout: jest.fn().mockImplementation(
+    () =>
+      (Component: React.FC) =>
+      (
+        props: JSX.IntrinsicAttributes & {
+          children?: React.ReactNode | undefined;
+        }
+      ) =>
+        <Component {...props} />
+  ),
 }));
 jest.mock('../../components/common/ResizablePanels/ResizablePanels', () =>
   jest.fn().mockImplementation(({ firstPanel, secondPanel }) => (

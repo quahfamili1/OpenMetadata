@@ -14,6 +14,7 @@
 import {
   Button,
   Card,
+  Checkbox,
   Col,
   Divider,
   Dropdown,
@@ -37,6 +38,7 @@ import React, {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as DropDown } from '../../assets/svg/drop-down.svg';
+import { NULL_OPTION_KEY } from '../../constants/AdvancedSearch.constants';
 import {
   generateSearchDropdownLabel,
   getSearchDropdownLabels,
@@ -65,14 +67,21 @@ const SearchDropdown: FC<SearchDropdownProps> = ({
   index,
   independent = false,
   hideCounts = false,
+  hasNullOption = false,
+  triggerButtonSize = 'small',
 }) => {
   const tabsInfo = searchClassBase.getTabsInfo();
   const { t } = useTranslation();
 
   const [isDropDownOpen, setIsDropDownOpen] = useState<boolean>(false);
   const [searchText, setSearchText] = useState('');
-  const [selectedOptions, setSelectedOptions] =
-    useState<SearchDropdownOption[]>(selectedKeys);
+  const [selectedOptions, setSelectedOptions] = useState<
+    SearchDropdownOption[]
+  >([]);
+  const [nullOptionSelected, setNullOptionSelected] = useState<boolean>(false);
+  const nullLabelText = t('label.no-entity', {
+    entity: label,
+  });
 
   // derive menu props from options and selected keys
   const menuOptions: MenuProps['items'] = useMemo(() => {
@@ -165,7 +174,14 @@ const SearchDropdown: FC<SearchDropdownProps> = ({
   // Handle update button click
   const handleUpdate = () => {
     // call on change with updated value
-    onChange(selectedOptions, searchKey);
+    if (nullOptionSelected) {
+      onChange(
+        [{ key: NULL_OPTION_KEY, label: nullLabelText }, ...selectedOptions],
+        searchKey
+      );
+    } else {
+      onChange(selectedOptions, searchKey);
+    }
     handleDropdownClose();
   };
 
@@ -175,8 +191,17 @@ const SearchDropdown: FC<SearchDropdownProps> = ({
   );
 
   useEffect(() => {
-    setSelectedOptions(selectedKeys);
-  }, [isDropDownOpen, selectedKeys, options]);
+    const isNullOptionSelected = selectedKeys.some(
+      (item) => item.key === NULL_OPTION_KEY
+    );
+    setNullOptionSelected(isNullOptionSelected);
+  }, [isDropDownOpen]);
+
+  useEffect(() => {
+    setSelectedOptions(
+      selectedKeys.filter((item) => item.key !== NULL_OPTION_KEY)
+    );
+  }, [isDropDownOpen, selectedKeys]);
 
   const getDropdownBody = useCallback(
     (menuNode: ReactNode) => {
@@ -217,7 +242,7 @@ const SearchDropdown: FC<SearchDropdownProps> = ({
         bodyStyle={{ padding: 0 }}
         className="custom-dropdown-render"
         data-testid="drop-down-menu">
-        <Space direction="vertical" size={0}>
+        <Space className="w-full" direction="vertical" size={0}>
           <div className="p-t-sm p-x-sm">
             <Input
               autoFocus
@@ -248,6 +273,22 @@ const SearchDropdown: FC<SearchDropdownProps> = ({
           <Divider
             className={classNames(showClearAllBtn ? 'm-y-0' : 'm-t-xs m-b-0')}
           />
+          {hasNullOption && (
+            <>
+              <div className="d-flex items-center m-x-sm m-y-xs gap-2">
+                <Checkbox
+                  checked={nullOptionSelected}
+                  className="d-flex flex-1"
+                  data-testid="no-option-checkbox"
+                  onChange={(e) => setNullOptionSelected(e.target.checked)}>
+                  {nullLabelText}
+                </Checkbox>
+              </div>
+
+              <Divider className="m-y-0" />
+            </>
+          )}
+
           {getDropdownBody(menuNode)}
           <Space className="p-sm p-t-xss">
             <Button
@@ -271,7 +312,9 @@ const SearchDropdown: FC<SearchDropdownProps> = ({
     [
       label,
       debouncedOnSearch,
+      hasNullOption,
       showClearAllBtn,
+      nullOptionSelected,
       handleClear,
       getDropdownBody,
       handleUpdate,
@@ -299,13 +342,17 @@ const SearchDropdown: FC<SearchDropdownProps> = ({
       <Tooltip
         mouseLeaveDelay={0}
         overlayClassName={isEmpty(selectedKeys) ? 'd-none' : ''}
-        placement="bottom"
+        placement="top"
         title={getSelectedOptionLabelString(selectedKeys, true)}
         trigger="hover">
-        <Button className="quick-filter-dropdown-trigger-btn">
+        <Button
+          className="quick-filter-dropdown-trigger-btn"
+          size={triggerButtonSize}>
           <Space data-testid={`search-dropdown-${label}`} size={4}>
             <Space size={0}>
-              <Typography.Text>{label}</Typography.Text>
+              <Typography.Text className="filters-label font-medium">
+                {label}
+              </Typography.Text>
               {selectedKeys.length > 0 && (
                 <span>
                   {': '}

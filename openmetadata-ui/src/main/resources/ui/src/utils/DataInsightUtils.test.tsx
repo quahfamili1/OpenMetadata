@@ -1,5 +1,5 @@
 /*
- *  Copyright 2023 Collate.
+ *  Copyright 2025 Collate.
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
  *  You may obtain a copy of the License at
@@ -10,140 +10,55 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-import { DataInsightChartType } from '../generated/dataInsight/dataInsightChartResult';
-import { getGraphDataByEntityType } from './DataInsightUtils';
-const mockEntityDescriptionData = [
-  {
-    timestamp: 1693872000000,
-    entityType: 'Table',
-    completedDescriptionFraction: 0.11,
-    completedDescription: 11,
-    entityCount: 100,
-  },
-];
-const mockServiceDescriptionData = [
-  {
-    timestamp: 1693872000000,
-    serviceName: 'mySQL',
-    hasOwnerFraction: 0.056179775280898875,
-    hasOwner: 5,
-    entityCount: 89,
-  },
-];
+import { render } from '@testing-library/react';
+import React from 'react';
+import { DataInsightChartTooltipProps } from '../interface/data-insight.interface';
+import { CustomTooltip } from './DataInsightUtils';
 
-const mockEntityOwnerData = [
-  {
-    timestamp: 1693872000000,
-    entityType: 'Table',
-    hasOwnerFraction: 0.08,
-    hasOwner: 8,
-    entityCount: 100,
-  },
-];
-const mockServiceOwnerData = [
-  {
-    timestamp: 1693872000000,
-    serviceName: 'mySQL',
-    hasOwnerFraction: 0.056179775280898875,
-    hasOwner: 5,
-    entityCount: 89,
-  },
-];
-
-describe('DataInsightUtils', () => {
-  it('getGraphDataByEntityType fn should provide result for entity type graph', () => {
-    const entityDescription = getGraphDataByEntityType(
-      mockEntityDescriptionData,
-      DataInsightChartType.PercentageOfEntitiesWithDescriptionByType
-    );
-    const entityOwner = getGraphDataByEntityType(
-      mockEntityOwnerData,
-      DataInsightChartType.PercentageOfEntitiesWithOwnerByType
-    );
-
-    expect(entityDescription).toStrictEqual({
-      data: [
-        {
-          Table: 11,
-          timestamp: 'Sep 05',
-          timestampValue: 1693872000000,
-        },
-      ],
-      entities: ['Table'],
-      isPercentageGraph: true,
-      latestData: {
-        Table: 11,
-        timestamp: 'Sep 05',
-        timestampValue: 1693872000000,
+describe('CustomTooltip', () => {
+  const defaultProps: DataInsightChartTooltipProps = {
+    active: true,
+    payload: [
+      {
+        color: '#ff0000',
+        name: 'Test Data',
+        value: 100,
+        payload: { timestampValue: 1620000000000, 'Test Data': 100, data: 120 },
+        dataKey: 'Test Data',
       },
-      relativePercentage: 0,
-      total: '11.00',
-    });
-    expect(entityOwner).toStrictEqual({
-      data: [
-        {
-          Table: 8,
-          timestamp: 'Sep 05',
-          timestampValue: 1693872000000,
-        },
-      ],
-      entities: ['Table'],
-      isPercentageGraph: true,
-      latestData: {
-        Table: 8,
-        timestamp: 'Sep 05',
-        timestampValue: 1693872000000,
-      },
-      relativePercentage: 0,
-      total: '8.00',
-    });
+    ],
+    valueFormatter: jest.fn((value) => `${value} units`),
+    dateTimeFormatter: jest.fn((timestamp) =>
+      new Date(timestamp || 0).toLocaleString()
+    ),
+    isPercentage: false,
+    timeStampKey: 'timestampValue',
+    transformLabel: true,
+  };
+
+  it('renders correctly when active', () => {
+    const { getByText } = render(<CustomTooltip {...defaultProps} />);
+
+    // Check if the timestamp is rendered
+    expect(getByText(/Test Data/i)).toBeInTheDocument();
+    expect(getByText(/100 units/i)).toBeInTheDocument();
   });
 
-  it('getGraphDataByEntityType fn should provide result for service type graph', () => {
-    const serviceDescription = getGraphDataByEntityType(
-      mockServiceDescriptionData,
-      DataInsightChartType.PercentageOfServicesWithDescription
-    );
-    const serviceOwner = getGraphDataByEntityType(
-      mockServiceOwnerData,
-      DataInsightChartType.PercentageOfServicesWithOwner
+  it('renders correctly when customValueKey is provided', () => {
+    const { getByText } = render(
+      <CustomTooltip {...{ ...defaultProps, customValueKey: 'data' }} />
     );
 
-    expect(serviceDescription).toStrictEqual({
-      data: [
-        {
-          mySQL: 0,
-          timestamp: 'Sep 05',
-          timestampValue: 1693872000000,
-        },
-      ],
-      entities: ['mySQL'],
-      isPercentageGraph: true,
-      latestData: {
-        mySQL: 0,
-        timestamp: 'Sep 05',
-        timestampValue: 1693872000000,
-      },
-      relativePercentage: 0,
-      total: '0.00',
-    });
-    expect(serviceOwner).toStrictEqual({
-      data: [
-        {
-          mySQL: 5.617977528089887,
-          timestamp: 'Sep 05',
-          timestampValue: 1693872000000,
-        },
-      ],
-      entities: ['mySQL'],
-      isPercentageGraph: true,
-      latestData: {
-        mySQL: 5.617977528089887,
-        timestamp: 'Sep 05',
-        timestampValue: 1693872000000,
-      },
-      relativePercentage: 0,
-      total: '5.62',
-    });
+    // Check if the timestamp is rendered
+    expect(getByText(/Test Data/i)).toBeInTheDocument();
+    expect(getByText(/120 units/i)).toBeInTheDocument();
+  });
+
+  it('returns null when not active', () => {
+    const { container } = render(
+      <CustomTooltip {...{ ...defaultProps, active: false }} />
+    );
+
+    expect(container.firstChild).toBeNull();
   });
 });

@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -62,15 +62,13 @@ class ProtobufParserTests(TestCase):
     parsed_schema = protobuf_parser.parse_protobuf_schema()
 
     def test_schema_name(self):
-        self.assertEqual(self.parsed_schema[0].name.__root__, "PersonInfo")
+        self.assertEqual(self.parsed_schema[0].name.root, "PersonInfo")
 
     def test_schema_type(self):
         self.assertEqual(self.parsed_schema[0].dataType.name, "RECORD")
 
     def test_field_names(self):
-        field_names = {
-            str(field.name.__root__) for field in self.parsed_schema[0].children
-        }
+        field_names = {str(field.name.root) for field in self.parsed_schema[0].children}
         self.assertEqual(
             field_names,
             {
@@ -102,7 +100,7 @@ class ProtobufParserTests(TestCase):
         We'll read the files under ./ingestion/tests/unit/resources/protobuf_parser and parse them
         This will be similar in way to how we get the data from kafka source
         """
-        resource_path = "./ingestion/tests/unit/resources/protobuf_parser/"
+        resource_path = f"{os.path.dirname(__file__)}/resources/protobuf_parser/"
         schema_name = "employee"
         file_list = os.listdir(resource_path)
         schema_text = ""
@@ -117,12 +115,8 @@ class ProtobufParserTests(TestCase):
             )
         )
         parsed_schema = protobuf_parser.parse_protobuf_schema()
-        self.assertEqual(parsed_schema[0].name.__root__, "Employee")
+        self.assertEqual(parsed_schema[0].name.root, "Employee")
         self.assertEqual(len(parsed_schema[0].children), 4)
-        self.assertEqual(parsed_schema[0].children[3].name.__root__, "contact")
-        self.assertEqual(
-            parsed_schema[0].children[3].children[0].name.__root__, "email"
-        )
-        self.assertEqual(
-            parsed_schema[0].children[3].children[1].name.__root__, "phone"
-        )
+        self.assertEqual(parsed_schema[0].children[3].name.root, "contact")
+        self.assertEqual(parsed_schema[0].children[3].children[0].name.root, "email")
+        self.assertEqual(parsed_schema[0].children[3].children[1].name.root, "phone")

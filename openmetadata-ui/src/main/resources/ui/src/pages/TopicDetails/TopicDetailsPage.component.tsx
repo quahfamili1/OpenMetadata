@@ -22,24 +22,22 @@ import React, {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHistory } from 'react-router-dom';
-
 import ErrorPlaceHolder from '../../components/common/ErrorWithPlaceholder/ErrorPlaceHolder';
 import Loader from '../../components/common/Loader/Loader';
 import { QueryVote } from '../../components/Database/TableQueries/TableQueries.interface';
 import TopicDetails from '../../components/Topic/TopicDetails/TopicDetails.component';
-import { getVersionPath } from '../../constants/constants';
+import { ROUTES } from '../../constants/constants';
 import { usePermissionProvider } from '../../context/PermissionProvider/PermissionProvider';
 import {
   OperationPermission,
   ResourceEntity,
 } from '../../context/PermissionProvider/PermissionProvider.interface';
+import { ClientErrors } from '../../enums/Axios.enum';
 import { ERROR_PLACEHOLDER_TYPE } from '../../enums/common.enum';
 import { EntityType, TabSpecificField } from '../../enums/entity.enum';
-import { CreateThread } from '../../generated/api/feed/createThread';
 import { Topic } from '../../generated/entity/data/topic';
 import { useApplicationStore } from '../../hooks/useApplicationStore';
 import { useFqn } from '../../hooks/useFqn';
-import { postThread } from '../../rest/feedsAPI';
 import {
   addFollower,
   getTopicByFqn,
@@ -50,10 +48,10 @@ import {
 import {
   addToRecentViewed,
   getEntityMissingError,
-  sortTagsCaseInsensitive,
 } from '../../utils/CommonUtils';
 import { getEntityName } from '../../utils/EntityUtils';
 import { DEFAULT_ENTITY_PERMISSION } from '../../utils/PermissionsUtils';
+import { getVersionPath } from '../../utils/RouterUtils';
 import { showErrorToast } from '../../utils/ToastUtils';
 
 const TopicDetailsPage: FunctionComponent = () => {
@@ -80,23 +78,15 @@ const TopicDetailsPage: FunctionComponent = () => {
     return patchTopicDetails(topicId, jsonPatch);
   };
 
-  const onTopicUpdate = async (updatedData: Topic, key: keyof Topic) => {
+  const onTopicUpdate = async (updatedData: Topic, key?: keyof Topic) => {
     try {
       const res = await saveUpdatedTopicData(updatedData);
 
       setTopicDetails((previous) => {
-        if (key === 'tags') {
-          return {
-            ...previous,
-            version: res.version,
-            [key]: sortTagsCaseInsensitive(res.tags ?? []),
-          };
-        }
-
         return {
           ...previous,
-          version: res.version,
-          [key]: res[key],
+          ...res,
+          ...(key && { [key]: res[key] }),
         };
       });
     } catch (error) {
@@ -112,7 +102,7 @@ const TopicDetailsPage: FunctionComponent = () => {
         entityFqn
       );
       setTopicPermissions(permissions);
-    } catch (error) {
+    } catch {
       showErrorToast(
         t('server.fetch-entity-permissions-error', {
           entity: entityFqn,
@@ -128,7 +118,7 @@ const TopicDetailsPage: FunctionComponent = () => {
     try {
       const res = await getTopicByFqn(topicFQN, {
         fields: [
-          TabSpecificField.OWNER,
+          TabSpecificField.OWNERS,
           TabSpecificField.FOLLOWERS,
           TabSpecificField.TAGS,
           TabSpecificField.DOMAIN,
@@ -152,6 +142,10 @@ const TopicDetailsPage: FunctionComponent = () => {
     } catch (error) {
       if ((error as AxiosError).response?.status === 404) {
         setIsError(true);
+      } else if (
+        (error as AxiosError)?.response?.status === ClientErrors.FORBIDDEN
+      ) {
+        history.replace(ROUTES.FORBIDDEN);
       } else {
         showErrorToast(
           error as AxiosError,
@@ -211,19 +205,6 @@ const TopicDetailsPage: FunctionComponent = () => {
       );
   };
 
-  const createThread = async (data: CreateThread) => {
-    try {
-      await postThread(data);
-    } catch (error) {
-      showErrorToast(
-        error as AxiosError,
-        t('server.create-entity-error', {
-          entity: t('label.conversation'),
-        })
-      );
-    }
-  };
-
   const handleToggleDelete = (version?: number) => {
     setTopicDetails((prev) => {
       if (!prev) {
@@ -243,7 +224,7 @@ const TopicDetailsPage: FunctionComponent = () => {
       await updateTopicVotes(id, data);
       const details = await getTopicByFqn(topicFQN, {
         fields: [
-          TabSpecificField.OWNER,
+          TabSpecificField.OWNERS,
           TabSpecificField.FOLLOWERS,
           TabSpecificField.TAGS,
           TabSpecificField.VOTES,
@@ -259,7 +240,7 @@ const TopicDetailsPage: FunctionComponent = () => {
     const updatedData = data as Topic;
 
     setTopicDetails((data) => ({
-      ...(data ?? updatedData),
+      ...(updatedData ?? data),
       version: updatedData.version,
     }));
   }, []);
@@ -285,12 +266,19 @@ const TopicDetailsPage: FunctionComponent = () => {
     );
   }
   if (!topicPermissions.ViewAll && !topicPermissions.ViewBasic) {
-    return <ErrorPlaceHolder type={ERROR_PLACEHOLDER_TYPE.PERMISSION} />;
+    return (
+      <ErrorPlaceHolder
+        className="border-none"
+        permissionValue={t('label.view-entity', {
+          entity: t('label.topic'),
+        })}
+        type={ERROR_PLACEHOLDER_TYPE.PERMISSION}
+      />
+    );
   }
 
   return (
     <TopicDetails
-      createThread={createThread}
       fetchTopic={() => fetchTopicDetail(topicFQN)}
       followTopicHandler={followTopic}
       handleToggleDelete={handleToggleDelete}

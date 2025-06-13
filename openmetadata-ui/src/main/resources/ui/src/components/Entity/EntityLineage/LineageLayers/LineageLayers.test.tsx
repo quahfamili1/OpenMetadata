@@ -14,7 +14,8 @@ import { act, queryByText, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { ReactFlowProvider } from 'reactflow';
-import { LineageLayerView } from '../../../../context/LineageProvider/LineageProvider.interface';
+import { EntityType } from '../../../../enums/entity.enum';
+import { LineageLayer } from '../../../../generated/settings/settings';
 import LineageLayers from './LineageLayers';
 
 const onMockColumnClick = jest.fn();
@@ -61,7 +62,6 @@ jest.mock('../../../../context/LineageProvider/LineageProvider', () => ({
       downstreamEdges: [],
     },
     activeLayer: [],
-    expandedNodes: [],
     fetchPipelineStatus: jest.fn(),
     onColumnClick: onMockColumnClick,
     onUpdateLayerView: onMockUpdateLayerView,
@@ -72,7 +72,7 @@ describe('LineageLayers component', () => {
   it('renders LineageLayers component', () => {
     const { container } = render(
       <ReactFlowProvider>
-        <LineageLayers />
+        <LineageLayers entityType={EntityType.TABLE} />
       </ReactFlowProvider>
     );
     const layerBtn = screen.getByText('label.layer-plural');
@@ -91,7 +91,7 @@ describe('LineageLayers component', () => {
   it('calls onUpdateLayerView when a button is clicked', async () => {
     render(
       <ReactFlowProvider>
-        <LineageLayers />
+        <LineageLayers entityType={EntityType.TABLE} />
       </ReactFlowProvider>
     );
 
@@ -114,13 +114,13 @@ describe('LineageLayers component', () => {
     userEvent.click(columnButton as HTMLElement);
 
     expect(onMockUpdateLayerView).toHaveBeenCalledWith([
-      LineageLayerView.COLUMN,
+      LineageLayer.ColumnLevelLineage,
     ]);
 
     userEvent.click(dataObservabilityBtn as HTMLElement);
 
     expect(onMockUpdateLayerView).toHaveBeenCalledWith([
-      LineageLayerView.DATA_OBSERVARABILITY,
+      LineageLayer.DataObservability,
     ]);
   });
 });

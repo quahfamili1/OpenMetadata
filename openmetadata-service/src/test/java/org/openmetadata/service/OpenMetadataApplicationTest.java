@@ -14,32 +14,34 @@
 package org.openmetadata.service;
 
 import static java.lang.String.format;
-import static org.openmetadata.service.util.TablesInitializer.validateAndRunSystemDataMigrations;
 
 import es.org.elasticsearch.client.RestClient;
 import es.org.elasticsearch.client.RestClientBuilder;
+import io.dropwizard.db.DataSourceFactory;
 import io.dropwizard.jersey.jackson.JacksonFeature;
 import io.dropwizard.testing.ConfigOverride;
 import io.dropwizard.testing.ResourceHelpers;
 import io.dropwizard.testing.junit5.DropwizardAppExtension;
+import jakarta.ws.rs.client.Client;
+import jakarta.ws.rs.client.ClientBuilder;
+import jakarta.ws.rs.client.WebTarget;
 import java.net.URI;
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.Set;
-import javax.ws.rs.client.Client;
-import javax.ws.rs.client.ClientBuilder;
-import javax.ws.rs.client.WebTarget;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.CredentialsProvider;
 import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.eclipse.jetty.client.HttpClient;
 import org.flywaydb.core.Flyway;
 import org.glassfish.jersey.client.ClientConfig;
 import org.glassfish.jersey.client.ClientProperties;
 import org.glassfish.jersey.jetty.connector.JettyClientProperties;
 import org.glassfish.jersey.jetty.connector.JettyConnectorProvider;
+import org.glassfish.jersey.jetty.connector.JettyHttpClientSupplier;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.sqlobject.SqlObjectPlugin;
 import org.jdbi.v3.sqlobject.SqlObjects;
@@ -50,10 +52,15 @@ import org.junit.jupiter.api.TestInstance;
 import org.openmetadata.common.utils.CommonUtil;
 import org.openmetadata.schema.service.configuration.elasticsearch.ElasticSearchConfiguration;
 import org.openmetadata.schema.type.IndexMappingLanguage;
-import org.openmetadata.service.fernet.Fernet;
+import org.openmetadata.service.jdbi3.CollectionDAO;
 import org.openmetadata.service.jdbi3.locator.ConnectionAwareAnnotationSqlLocator;
 import org.openmetadata.service.jdbi3.locator.ConnectionType;
+import org.openmetadata.service.jobs.JobDAO;
+import org.openmetadata.service.migration.api.MigrationWorkflow;
 import org.openmetadata.service.resources.CollectionRegistry;
+import org.openmetadata.service.resources.databases.DatasourceConfig;
+import org.openmetadata.service.resources.events.MSTeamsCallbackResource;
+import org.openmetadata.service.resources.events.SlackCallbackResource;
 import org.openmetadata.service.resources.events.WebhookCallbackResource;
 import org.openmetadata.service.search.SearchRepository;
 import org.testcontainers.containers.JdbcDatabaseContainer;
@@ -74,12 +81,17 @@ public abstract class OpenMetadataApplicationTest {
   public static final Integer ELASTIC_BATCH_SIZE = 10;
   public static final IndexMappingLanguage ELASTIC_SEARCH_INDEX_MAPPING_LANGUAGE =
       IndexMappingLanguage.EN;
+  public static final String ELASTIC_SEARCH_CLUSTER_ALIAS = "openmetadata";
   public static final ElasticSearchConfiguration.SearchType ELASTIC_SEARCH_TYPE =
       ElasticSearchConfiguration.SearchType.ELASTICSEARCH;
   public static DropwizardAppExtension<OpenMetadataApplicationConfig> APP;
+
   protected static final WebhookCallbackResource webhookCallbackResource =
       new WebhookCallbackResource();
-  public static final String FERNET_KEY_1 = "ihZpp5gmmDvVsgoOG6OVivKWwC9vd5JQ";
+  protected static final SlackCallbackResource slackCallbackResource = new SlackCallbackResource();
+  protected static final MSTeamsCallbackResource teamsCallbackResource =
+      new MSTeamsCallbackResource();
+
   public static Jdbi jdbi;
   private static ElasticsearchContainer ELASTIC_SEARCH_CONTAINER;
 
@@ -89,15 +101,16 @@ public abstract class OpenMetadataApplicationTest {
       "org.testcontainers.containers.MySQLContainer";
   private static final String JDBC_CONTAINER_IMAGE = "mysql:8";
   private static final String ELASTIC_SEARCH_CONTAINER_IMAGE =
-      "docker.elastic.co/elasticsearch/elasticsearch:8.10.2";
+      "docker.elastic.co/elasticsearch/elasticsearch:8.11.4";
 
   private static String HOST;
   private static String PORT;
-  private static Client client;
+  protected static Client client;
 
   static {
     CollectionRegistry.addTestResource(webhookCallbackResource);
-    Fernet.getInstance().setFernetKey(FERNET_KEY_1);
+    CollectionRegistry.addTestResource(slackCallbackResource);
+    CollectionRegistry.addTestResource(teamsCallbackResource);
   }
 
   @BeforeAll
@@ -127,7 +140,17 @@ public abstract class OpenMetadataApplicationTest {
     sqlContainer.withReuse(false);
     sqlContainer.withStartupTimeoutSeconds(240);
     sqlContainer.withConnectTimeoutSeconds(240);
+    sqlContainer.withPassword("password");
+    sqlContainer.withUsername("username");
     sqlContainer.start();
+
+    // Note: Added DataSourceFactory since this configuration is needed by the WorkflowHandler.
+    DataSourceFactory dataSourceFactory = new DataSourceFactory();
+    dataSourceFactory.setUrl(sqlContainer.getJdbcUrl());
+    dataSourceFactory.setUser(sqlContainer.getUsername());
+    dataSourceFactory.setPassword(sqlContainer.getPassword());
+    dataSourceFactory.setDriverClass(sqlContainer.getDriverClassName());
+    config.setDataSourceFactory(dataSourceFactory);
 
     final String flyWayMigrationScriptsLocation =
         ResourceHelpers.resourceFilePath(
@@ -191,6 +214,7 @@ public abstract class OpenMetadataApplicationTest {
     jdbi.installPlugin(new SqlObjectPlugin());
     jdbi.getConfig(SqlObjects.class)
         .setSqlLocator(new ConnectionAwareAnnotationSqlLocator(sqlContainer.getDriverClassName()));
+    // jdbi.setSqlLogger(new DebugSqlLogger());
     validateAndRunSystemDataMigrations(
         jdbi,
         config,
@@ -203,6 +227,37 @@ public abstract class OpenMetadataApplicationTest {
     createClient();
   }
 
+  public void validateAndRunSystemDataMigrations(
+      Jdbi jdbi,
+      OpenMetadataApplicationConfig config,
+      ConnectionType connType,
+      String nativeMigrationSQLPath,
+      String extensionSQLScriptRootPath,
+      boolean forceMigrations) {
+    DatasourceConfig.initialize(connType.label);
+    MigrationWorkflow workflow =
+        new MigrationWorkflow(
+            jdbi,
+            nativeMigrationSQLPath,
+            connType,
+            extensionSQLScriptRootPath,
+            config,
+            forceMigrations);
+    // Initialize search repository
+    SearchRepository searchRepository = new SearchRepository(getEsConfig());
+    Entity.setSearchRepository(searchRepository);
+    Entity.setCollectionDAO(getDao(jdbi));
+    Entity.setJobDAO(jdbi.onDemand(JobDAO.class));
+    Entity.initializeRepositories(config, jdbi);
+    workflow.loadMigrations();
+    workflow.runMigrationWorkflows();
+    Entity.cleanup();
+  }
+
+  protected CollectionDAO getDao(Jdbi jdbi) {
+    return jdbi.onDemand(CollectionDAO.class);
+  }
+
   @NotNull
   protected DropwizardAppExtension<OpenMetadataApplicationConfig> getApp(
       ConfigOverride[] configOverridesArray) {
@@ -211,8 +266,11 @@ public abstract class OpenMetadataApplicationTest {
   }
 
   private static void createClient() {
+    HttpClient httpClient = new HttpClient();
+    httpClient.setIdleTimeout(0);
     ClientConfig config = new ClientConfig();
     config.connectorProvider(new JettyConnectorProvider());
+    config.register(new JettyHttpClientSupplier(httpClient));
     config.register(new JacksonFeature(APP.getObjectMapper()));
     config.property(ClientProperties.CONNECT_TIMEOUT, 0);
     config.property(ClientProperties.READ_TIMEOUT, 0);
@@ -237,19 +295,7 @@ public abstract class OpenMetadataApplicationTest {
   }
 
   private void createIndices() {
-    ElasticSearchConfiguration esConfig = new ElasticSearchConfiguration();
-    esConfig
-        .withHost(HOST)
-        .withPort(ELASTIC_SEARCH_CONTAINER.getMappedPort(9200))
-        .withUsername(ELASTIC_USER)
-        .withPassword(ELASTIC_PASSWORD)
-        .withScheme(ELASTIC_SCHEME)
-        .withConnectionTimeoutSecs(ELASTIC_CONNECT_TIMEOUT)
-        .withSocketTimeoutSecs(ELASTIC_SOCKET_TIMEOUT)
-        .withKeepAliveTimeoutSecs(ELASTIC_KEEP_ALIVE_TIMEOUT)
-        .withBatchSize(ELASTIC_BATCH_SIZE)
-        .withSearchIndexMappingLanguage(ELASTIC_SEARCH_INDEX_MAPPING_LANGUAGE)
-        .withSearchType(ELASTIC_SEARCH_TYPE);
+    ElasticSearchConfiguration esConfig = getEsConfig();
     SearchRepository searchRepository = new SearchRepository(esConfig);
     LOG.info("creating indexes.");
     searchRepository.createIndexes();
@@ -307,6 +353,8 @@ public abstract class OpenMetadataApplicationTest {
             "elasticsearch.searchIndexMappingLanguage",
             ELASTIC_SEARCH_INDEX_MAPPING_LANGUAGE.value()));
     configOverrides.add(
+        ConfigOverride.config("elasticsearch.clusterAlias", ELASTIC_SEARCH_CLUSTER_ALIAS));
+    configOverrides.add(
         ConfigOverride.config("elasticsearch.searchType", ELASTIC_SEARCH_TYPE.value()));
   }
 
@@ -317,5 +365,23 @@ public abstract class OpenMetadataApplicationTest {
     configOverrides.add(ConfigOverride.config("database.url", sqlContainer.getJdbcUrl()));
     configOverrides.add(ConfigOverride.config("database.user", sqlContainer.getUsername()));
     configOverrides.add(ConfigOverride.config("database.password", sqlContainer.getPassword()));
+  }
+
+  private static ElasticSearchConfiguration getEsConfig() {
+    ElasticSearchConfiguration esConfig = new ElasticSearchConfiguration();
+    esConfig
+        .withHost(HOST)
+        .withPort(ELASTIC_SEARCH_CONTAINER.getMappedPort(9200))
+        .withUsername(ELASTIC_USER)
+        .withPassword(ELASTIC_PASSWORD)
+        .withScheme(ELASTIC_SCHEME)
+        .withConnectionTimeoutSecs(ELASTIC_CONNECT_TIMEOUT)
+        .withSocketTimeoutSecs(ELASTIC_SOCKET_TIMEOUT)
+        .withKeepAliveTimeoutSecs(ELASTIC_KEEP_ALIVE_TIMEOUT)
+        .withBatchSize(ELASTIC_BATCH_SIZE)
+        .withSearchIndexMappingLanguage(ELASTIC_SEARCH_INDEX_MAPPING_LANGUAGE)
+        .withClusterAlias(ELASTIC_SEARCH_CLUSTER_ALIAS)
+        .withSearchType(ELASTIC_SEARCH_TYPE);
+    return esConfig;
   }
 }

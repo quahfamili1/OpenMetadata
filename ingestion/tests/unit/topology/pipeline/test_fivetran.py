@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -69,6 +69,7 @@ EXPECTED_FIVETRAN_DETAILS = FivetranPipelineDetails(
     source=mock_data.get("source"),
     destination=mock_data.get("destination"),
     group=mock_data.get("group"),
+    connector_id=mock_data.get("source").get("id"),
 )
 
 
@@ -79,18 +80,21 @@ EXPECTED_CREATED_PIPELINES = CreatePipelineRequest(
         Task(
             name="wackiness_remote_aiding_pointless",
             displayName="test <> postgres_rds",
+            sourceUrl=SourceUrl(
+                "https://fivetran.com/dashboard/connectors/aiding_pointless/status?groupId=wackiness_remote&service=postgres_rds"
+            ),
         )
     ],
-    service=FullyQualifiedEntityName(__root__="fivetran_source"),
+    service=FullyQualifiedEntityName("fivetran_source"),
     sourceUrl=SourceUrl(
-        __root__="https://fivetran.com/dashboard/connectors/aiding_pointless/status?groupId=wackiness_remote&service=postgres_rds"
+        "https://fivetran.com/dashboard/connectors/aiding_pointless/status?groupId=wackiness_remote&service=postgres_rds"
     ),
 )
 
 MOCK_PIPELINE_SERVICE = PipelineService(
     id="85811038-099a-11ed-861d-0242ac120002",
     name="fivetran_source",
-    fullyQualifiedName=FullyQualifiedEntityName(__root__="fivetran_source"),
+    fullyQualifiedName=FullyQualifiedEntityName("fivetran_source"),
     connection=PipelineConnection(),
     serviceType=PipelineServiceType.Fivetran,
 )
@@ -120,15 +124,15 @@ class FivetranUnitTest(TestCase):
     def __init__(self, methodName, fivetran_client, test_connection) -> None:
         super().__init__(methodName)
         test_connection.return_value = False
-        config = OpenMetadataWorkflowConfig.parse_obj(mock_fivetran_config)
+        config = OpenMetadataWorkflowConfig.model_validate(mock_fivetran_config)
         self.fivetran = FivetranSource.create(
             mock_fivetran_config["source"],
             config.workflowConfig.openMetadataServerConfig,
         )
-        self.fivetran.context.get().__dict__["pipeline"] = MOCK_PIPELINE.name.__root__
+        self.fivetran.context.get().__dict__["pipeline"] = MOCK_PIPELINE.name.root
         self.fivetran.context.get().__dict__[
             "pipeline_service"
-        ] = MOCK_PIPELINE_SERVICE.name.__root__
+        ] = MOCK_PIPELINE_SERVICE.name.root
         self.client = fivetran_client.return_value
         self.client.list_groups.return_value = [mock_data.get("group")]
         self.client.list_group_connectors.return_value = [mock_data.get("source")]
@@ -141,7 +145,7 @@ class FivetranUnitTest(TestCase):
     def test_pipeline_name(self):
         assert (
             self.fivetran.get_pipeline_name(EXPECTED_FIVETRAN_DETAILS)
-            == f'{mock_data.get("group").get("id")}_{mock_data.get("source").get("id")}'
+            == f'{mock_data.get("group").get("name")} <> {mock_data.get("source").get("schema")}'
         )
 
     def test_pipelines(self):

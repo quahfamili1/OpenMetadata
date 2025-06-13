@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,12 +17,12 @@ from datetime import datetime, timedelta
 from functools import partial
 from typing import Callable, Optional, Union
 
-import airflow
 from airflow import DAG
 from openmetadata_managed_apis.api.utils import clean_dag_id
 from pydantic import ValidationError
 from requests.utils import quote
 
+from metadata.generated.schema.entity.services.apiService import ApiService
 from metadata.generated.schema.entity.services.dashboardService import DashboardService
 from metadata.generated.schema.entity.services.databaseService import DatabaseService
 from metadata.generated.schema.entity.services.messagingService import MessagingService
@@ -34,10 +34,10 @@ from metadata.generated.schema.entity.services.storageService import StorageServ
 from metadata.generated.schema.metadataIngestion.application import (
     OpenMetadataApplicationConfig,
 )
-from metadata.ingestion.models.encoders import show_secrets_encoder
+from metadata.generated.schema.type.basic import Timestamp, Uuid
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
 from metadata.utils import fqn
-from metadata.workflow.workflow_output_handler import print_status
+from metadata.workflow.base import BaseWorkflow
 
 # pylint: disable=ungrouped-imports
 try:
@@ -45,6 +45,7 @@ try:
 except ModuleNotFoundError:
     from airflow.operators.python_operator import PythonOperator
 
+from croniter import croniter
 from openmetadata_managed_apis.utils.logger import set_operator_logger, workflow_logger
 from openmetadata_managed_apis.utils.parser import (
     parse_service_connection,
@@ -73,6 +74,7 @@ from metadata.workflow.metadata import MetadataWorkflow
 logger = workflow_logger()
 
 ENTITY_CLASS_MAP = {
+    "apiService": ApiService,
     "databaseService": DatabaseService,
     "pipelineService": PipelineService,
     "dashboardService": DashboardService,
@@ -185,10 +187,23 @@ def build_source(ingestion_pipeline: IngestionPipeline) -> WorkflowSource:
 
     return WorkflowSource(
         type=service.serviceType.value.lower(),
-        serviceName=service.name.__root__,
+        serviceName=service.name.root,
         serviceConnection=service.connection,
         sourceConfig=ingestion_pipeline.sourceConfig,
     )
+
+
+def execute_workflow(
+    workflow: BaseWorkflow, workflow_config: OpenMetadataWorkflowConfig
+) -> None:
+    """
+    Execute the workflow and handle the status
+    """
+    workflow.execute()
+    workflow.print_status()
+    workflow.stop()
+    if workflow_config.workflowConfig.raiseOnError:
+        workflow.raise_from_status()
 
 
 def metadata_ingestion_workflow(workflow_config: OpenMetadataWorkflowConfig):
@@ -203,13 +218,11 @@ def metadata_ingestion_workflow(workflow_config: OpenMetadataWorkflowConfig):
 
     set_operator_logger(workflow_config)
 
-    config = json.loads(workflow_config.json(encoder=show_secrets_encoder))
+    config = json.loads(
+        workflow_config.model_dump_json(exclude_defaults=False, mask_secrets=False)
+    )
     workflow = MetadataWorkflow.create(config)
-
-    workflow.execute()
-    workflow.raise_from_status()
-    print_status(workflow)
-    workflow.stop()
+    execute_workflow(workflow, workflow_config)
 
 
 def build_workflow_config_property(
@@ -222,6 +235,7 @@ def build_workflow_config_property(
     """
     return WorkflowConfig(
         loggerLevel=ingestion_pipeline.loggerLevel or LogLevels.INFO,
+        raiseOnError=ingestion_pipeline.raiseOnError,
         openMetadataServerConfig=ingestion_pipeline.openMetadataServerConnection,
     )
 
@@ -247,15 +261,27 @@ def build_dag_configs(ingestion_pipeline: IngestionPipeline) -> dict:
     :param ingestion_pipeline: pipeline configs
     :return: dict to use as kwargs
     """
+    # Determine start_date based on schedule_interval using croniter
+    schedule_interval = ingestion_pipeline.airflowConfig.scheduleInterval
+    now = datetime.now()
+
+    if schedule_interval is None:
+        # On-demand DAG, set start_date to now
+        start_date = now
+    elif croniter.is_valid(schedule_interval):
+        cron = croniter(schedule_interval, now)
+        start_date = cron.get_prev(datetime)
+    else:
+        # Handle invalid cron expressions if necessary
+        start_date = now
+
     return {
-        "dag_id": clean_dag_id(ingestion_pipeline.name.__root__),
-        "description": ingestion_pipeline.description.__root__
+        "dag_id": clean_dag_id(ingestion_pipeline.name.root),
+        "description": ingestion_pipeline.description.root
         if ingestion_pipeline.description is not None
         else None,
-        "start_date": ingestion_pipeline.airflowConfig.startDate.__root__
-        if ingestion_pipeline.airflowConfig.startDate
-        else airflow.utils.dates.days_ago(1),
-        "end_date": ingestion_pipeline.airflowConfig.endDate.__root__
+        "start_date": start_date,
+        "end_date": ingestion_pipeline.airflowConfig.endDate.root
         if ingestion_pipeline.airflowConfig.endDate
         else None,
         "concurrency": ingestion_pipeline.airflowConfig.concurrency,
@@ -268,11 +294,11 @@ def build_dag_configs(ingestion_pipeline: IngestionPipeline) -> dict:
         "is_paused_upon_creation": ingestion_pipeline.airflowConfig.pausePipeline
         or False,
         "catchup": ingestion_pipeline.airflowConfig.pipelineCatchup or False,
-        "schedule_interval": ingestion_pipeline.airflowConfig.scheduleInterval,
+        "schedule_interval": schedule_interval,
         "tags": [
             "OpenMetadata",
             clean_name_tag(ingestion_pipeline.displayName)
-            or clean_name_tag(ingestion_pipeline.name.__root__),
+            or clean_name_tag(ingestion_pipeline.name.root),
             f"type:{ingestion_pipeline.pipelineType.value}",
             f"service:{clean_name_tag(ingestion_pipeline.service.name)}",
         ],
@@ -310,9 +336,10 @@ def send_failed_status_callback(workflow_config: OpenMetadataWorkflowConfig, *_,
         )
 
         pipeline_status = metadata.get_pipeline_status(
-            workflow_config.ingestionPipelineFQN, str(workflow_config.pipelineRunId)
+            workflow_config.ingestionPipelineFQN,
+            str(workflow_config.pipelineRunId.root),
         )
-        pipeline_status.endDate = datetime.now().timestamp() * 1000
+        pipeline_status.endDate = Timestamp(int(datetime.now().timestamp() * 1000))
         pipeline_status.pipelineState = PipelineState.failed
 
         metadata.create_or_update_pipeline_status(
@@ -342,28 +369,38 @@ def build_dag(
     ingestion_pipeline: IngestionPipeline,
     workflow_config: Union[OpenMetadataWorkflowConfig, OpenMetadataApplicationConfig],
     workflow_fn: Callable,
+    params: Optional[dict] = None,
 ) -> DAG:
     """
     Build a simple metadata workflow DAG
+    :param task_name: Name of the task
+    :param ingestion_pipeline: Pipeline configs
+    :param workflow_config: Workflow configurations
+    :param workflow_fn: Function to be executed
+    :param params: Optional parameters to pass to the operator
+    :return: DAG
     """
 
     with DAG(**build_dag_configs(ingestion_pipeline)) as dag:
         # Initialize with random UUID4. Will be used by the callback instead of
         # generating it inside the Workflow itself.
-        workflow_config.pipelineRunId = str(uuid.uuid4())
+        workflow_config.pipelineRunId = Uuid(uuid.uuid4())
 
         CustomPythonOperator(
             task_id=task_name,
             python_callable=workflow_fn,
-            op_kwargs={"workflow_config": workflow_config},
+            op_kwargs={
+                "workflow_config": workflow_config,
+            },
             # There's no need to retry if we have had an error. Wait until the next schedule or manual rerun.
             retries=ingestion_pipeline.airflowConfig.retries or 0,
             # each DAG will call its own OpenMetadataWorkflowConfig
             on_failure_callback=partial(send_failed_status_callback, workflow_config),
             # Add tag and ownership to easily identify DAGs generated by OM
-            owner=ingestion_pipeline.owner.name
-            if ingestion_pipeline.owner
+            owner=ingestion_pipeline.owners.root[0].name
+            if (ingestion_pipeline.owners and ingestion_pipeline.owners.root)
             else "openmetadata",
+            params=params,
         )
 
         return dag

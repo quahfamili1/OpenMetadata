@@ -13,15 +13,15 @@
 
 package org.openmetadata.service.resources.topics;
 
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
+import static jakarta.ws.rs.core.Response.Status.OK;
 import static java.util.Collections.singletonList;
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.NOT_FOUND;
-import static javax.ws.rs.core.Response.Status.OK;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.openmetadata.common.utils.CommonUtil.listOf;
-import static org.openmetadata.service.Entity.FIELD_OWNER;
+import static org.openmetadata.service.Entity.FIELD_OWNERS;
 import static org.openmetadata.service.Entity.TAG;
 import static org.openmetadata.service.security.SecurityUtil.authHeaders;
 import static org.openmetadata.service.util.EntityUtil.fieldAdded;
@@ -33,6 +33,8 @@ import static org.openmetadata.service.util.TestUtils.assertListNotNull;
 import static org.openmetadata.service.util.TestUtils.assertListNull;
 import static org.openmetadata.service.util.TestUtils.assertResponse;
 
+import jakarta.ws.rs.client.WebTarget;
+import jakarta.ws.rs.core.Response.Status;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -41,8 +43,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import javax.ws.rs.client.WebTarget;
-import javax.ws.rs.core.Response.Status;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.client.HttpResponseException;
 import org.junit.jupiter.api.Test;
@@ -100,19 +100,19 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
     assertResponse(
         () -> createEntity(createRequest(test).withService(null), ADMIN_AUTH_HEADERS),
         BAD_REQUEST,
-        "[service must not be null]");
+        "[query param service must not be null]");
 
     // Partitions is required field
     assertResponse(
         () -> createEntity(createRequest(test).withPartitions(null), ADMIN_AUTH_HEADERS),
         BAD_REQUEST,
-        "[partitions must not be null]");
+        "[query param partitions must not be null]");
 
     // Partitions must be >= 1
     assertResponse(
         () -> createEntity(createRequest(test).withPartitions(0), ADMIN_AUTH_HEADERS),
         BAD_REQUEST,
-        "[partitions must be greater than or equal to 1]");
+        "[query param partitions must be greater than or equal to 1]");
   }
 
   @Test
@@ -140,7 +140,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
         new MessageSchema().withSchemaText("abc").withSchemaType(SchemaType.Avro);
     CreateTopic createTopic =
         createRequest(test)
-            .withOwner(USER1_REF)
+            .withOwners(List.of(USER1_REF))
             .withMaximumMessageSize(1)
             .withMinimumInSyncReplicas(1)
             .withPartitions(1)
@@ -153,7 +153,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
     // Patch and update the topic
     Topic topic = createEntity(createTopic, ADMIN_AUTH_HEADERS);
     createTopic
-        .withOwner(TEAM11_REF)
+        .withOwners(List.of(TEAM11_REF))
         .withMinimumInSyncReplicas(2)
         .withMaximumMessageSize(2)
         .withPartitions(2)
@@ -165,7 +165,8 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
         .withCleanupPolicies(List.of(CleanupPolicy.DELETE));
 
     ChangeDescription change = getChangeDescription(topic, MINOR_UPDATE);
-    fieldUpdated(change, FIELD_OWNER, USER1_REF, TEAM11_REF);
+    fieldDeleted(change, FIELD_OWNERS, List.of(USER1_REF));
+    fieldAdded(change, FIELD_OWNERS, List.of(TEAM11_REF));
     fieldUpdated(change, "maximumMessageSize", 1, 2);
     fieldUpdated(change, "minimumInSyncReplicas", 1, 2);
     fieldUpdated(change, "partitions", 1, 2);
@@ -184,7 +185,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
 
     CreateTopic createTopic =
         createRequest(test)
-            .withOwner(USER1_REF)
+            .withOwners(List.of(USER1_REF))
             .withMaximumMessageSize(1)
             .withMinimumInSyncReplicas(1)
             .withPartitions(1)
@@ -214,7 +215,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
             getField("county", FieldDataType.STRING, PERSONAL_DATA_TAG_LABEL));
     CreateTopic createTopic =
         createRequest(test)
-            .withOwner(USER1_REF)
+            .withOwners(List.of(USER1_REF))
             .withMaximumMessageSize(1)
             .withMinimumInSyncReplicas(1)
             .withPartitions(1)
@@ -229,7 +230,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
     String origJson = JsonUtils.pojoToJson(topic);
 
     topic
-        .withOwner(TEAM11_REF)
+        .withOwners(List.of(TEAM11_REF))
         .withMinimumInSyncReplicas(2)
         .withMaximumMessageSize(2)
         .withPartitions(2)
@@ -240,7 +241,6 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
         .withCleanupPolicies(List.of(CleanupPolicy.DELETE));
 
     ChangeDescription change = getChangeDescription(topic, MINOR_UPDATE);
-    fieldUpdated(change, FIELD_OWNER, USER1_REF, TEAM11_REF);
     fieldUpdated(change, "maximumMessageSize", 1, 2);
     fieldUpdated(change, "minimumInSyncReplicas", 1, 2);
     fieldUpdated(change, "partitions", 1, 2);
@@ -249,6 +249,8 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
     fieldUpdated(change, "retentionSize", 1.0, 2.0);
     fieldDeleted(change, "cleanupPolicies", List.of(CleanupPolicy.COMPACT));
     fieldAdded(change, "cleanupPolicies", List.of(CleanupPolicy.DELETE));
+    fieldDeleted(change, "owners", List.of(USER1_REF));
+    fieldAdded(change, "owners", List.of(TEAM11_REF));
     patchEntityAndCheck(topic, origJson, ADMIN_AUTH_HEADERS, MINOR_UPDATE, change);
   }
 
@@ -258,7 +260,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
     CreateTopic create =
         createRequest(testInfo)
             .withTags(List.of(TIER1_TAG_LABEL, TIER2_TAG_LABEL))
-            .withOwner(USER1_REF)
+            .withOwners(List.of(USER1_REF))
             .withMaximumMessageSize(1)
             .withMinimumInSyncReplicas(1)
             .withPartitions(1)
@@ -274,7 +276,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
     // Apply mutually exclusive tags to a topic field
     CreateTopic create1 =
         createRequest(testInfo, 1)
-            .withOwner(USER1_REF)
+            .withOwners(List.of(USER1_REF))
             .withMaximumMessageSize(1)
             .withMinimumInSyncReplicas(1)
             .withPartitions(1)
@@ -293,7 +295,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
     // Apply mutually exclusive tags to a topic's nested field
     CreateTopic create2 =
         createRequest(testInfo, 1)
-            .withOwner(USER1_REF)
+            .withOwners(List.of(USER1_REF))
             .withMaximumMessageSize(1)
             .withMinimumInSyncReplicas(1)
             .withPartitions(1)
@@ -325,7 +327,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
             getField("county", FieldDataType.STRING, PERSONAL_DATA_TAG_LABEL));
     CreateTopic createTopic =
         createRequest(test)
-            .withOwner(USER1_REF)
+            .withOwners(List.of(USER1_REF))
             .withMaximumMessageSize(1)
             .withMinimumInSyncReplicas(1)
             .withPartitions(1)
@@ -340,7 +342,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
     String origJson = JsonUtils.pojoToJson(topic);
 
     topic
-        .withOwner(TEAM11_REF)
+        .withOwners(List.of(TEAM11_REF))
         .withMinimumInSyncReplicas(2)
         .withMaximumMessageSize(2)
         .withPartitions(2)
@@ -351,7 +353,8 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
         .withCleanupPolicies(List.of(CleanupPolicy.DELETE));
 
     ChangeDescription change = getChangeDescription(topic, MINOR_UPDATE);
-    fieldUpdated(change, FIELD_OWNER, USER1_REF, TEAM11_REF);
+    fieldDeleted(change, FIELD_OWNERS, List.of(USER1_REF));
+    fieldAdded(change, FIELD_OWNERS, List.of(TEAM11_REF));
     fieldUpdated(change, "maximumMessageSize", 1, 2);
     fieldUpdated(change, "minimumInSyncReplicas", 1, 2);
     fieldUpdated(change, "partitions", 1, 2);
@@ -389,7 +392,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
   }
 
   @Test
-  void test_inheritDomain(TestInfo test) throws IOException, InterruptedException {
+  void test_inheritDomain(TestInfo test) throws IOException {
     // When domain is not set for a topic, carry it forward from the messaging service
     MessagingServiceResourceTest serviceTest = new MessagingServiceResourceTest();
     CreateMessagingService createService =
@@ -408,7 +411,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
     CreateMessagingService createMessagingService =
         serviceTest
             .createRequest(getEntityName(test))
-            .withOwner(DATA_CONSUMER.getEntityReference());
+            .withOwners(List.of(DATA_CONSUMER.getEntityReference()));
     MessagingService service = serviceTest.createEntity(createMessagingService, ADMIN_AUTH_HEADERS);
 
     // Data consumer as an owner of the service can create topic under it
@@ -476,9 +479,9 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
         byName
             ? getTopicByName(topic.getFullyQualifiedName(), fields, ADMIN_AUTH_HEADERS)
             : getTopic(topic.getId(), fields, ADMIN_AUTH_HEADERS);
-    assertListNull(topic.getOwner(), topic.getFollowers(), topic.getFollowers());
+    assertListNull(topic.getOwners(), topic.getFollowers(), topic.getFollowers());
 
-    fields = "owner, followers, tags";
+    fields = "owners, followers, tags";
     topic =
         byName
             ? getTopicByName(topic.getFullyQualifiedName(), fields, ADMIN_AUTH_HEADERS)
@@ -552,6 +555,15 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
       SchemaType expectedSchemaType = (SchemaType) expected;
       SchemaType actualSchemaType = SchemaType.fromValue(actual.toString());
       assertEquals(expectedSchemaType, actualSchemaType);
+    } else if (fieldName.endsWith("owners") && (expected != null && actual != null)) {
+      @SuppressWarnings("unchecked")
+      List<EntityReference> expectedOwners =
+          expected instanceof List
+              ? (List<EntityReference>) expected
+              : JsonUtils.readObjects(expected.toString(), EntityReference.class);
+      List<EntityReference> actualOwners =
+          JsonUtils.readObjects(actual.toString(), EntityReference.class);
+      assertOwners(expectedOwners, actualOwners);
     } else {
       assertCommonFieldChange(fieldName, expected, actual);
     }
@@ -569,7 +581,7 @@ public class TopicResourceTest extends EntityResourceTest<Topic, CreateTopic> {
     return TestUtils.get(target, Topic.class, authHeaders);
   }
 
-  private static Field getField(String name, FieldDataType fieldDataType, TagLabel tag) {
+  public static Field getField(String name, FieldDataType fieldDataType, TagLabel tag) {
     List<TagLabel> tags = tag == null ? new ArrayList<>() : singletonList(tag);
     return new Field()
         .withName(name)

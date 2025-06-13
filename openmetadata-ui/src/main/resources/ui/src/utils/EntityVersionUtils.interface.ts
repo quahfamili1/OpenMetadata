@@ -11,6 +11,7 @@
  *  limitations under the License.
  */
 
+import { APICollection } from '../generated/entity/data/apiCollection';
 import { Column as ContainerColumn } from '../generated/entity/data/container';
 import { Database } from '../generated/entity/data/database';
 import { DatabaseSchema } from '../generated/entity/data/databaseSchema';
@@ -18,6 +19,7 @@ import { Glossary } from '../generated/entity/data/glossary';
 import { GlossaryTerm } from '../generated/entity/data/glossaryTerm';
 import { Column as TableColumn } from '../generated/entity/data/table';
 import { Field } from '../generated/entity/data/topic';
+import { TestCase } from '../generated/tests/testCase';
 import { TagLabel } from '../generated/type/tagLabel';
 import { ServicesType } from '../interface/service.interface';
 import { VersionData } from '../pages/EntityVersionPage/EntityVersionPage.component';
@@ -38,6 +40,8 @@ export type VersionEntityTypes =
   | GlossaryTerm
   | ServicesType
   | Database
-  | DatabaseSchema;
+  | DatabaseSchema
+  | APICollection
+  | TestCase;
 
 export type AssetsChildForVersionPages = TableColumn | ContainerColumn | Field;

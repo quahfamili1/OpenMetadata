@@ -24,21 +24,29 @@ import React, {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation } from 'react-router-dom';
-import { PAGE_SIZE } from '../../../../constants/constants';
+import { PAGE_SIZE_BASE } from '../../../../constants/constants';
 import { mockDatasetData } from '../../../../constants/mockTourData.constants';
-import { DEFAULT_RANGE_DATA } from '../../../../constants/profiler.constant';
+import {
+  DEFAULT_RANGE_DATA,
+  DEFAULT_SORT_ORDER,
+} from '../../../../constants/profiler.constant';
 import { useTourProvider } from '../../../../context/TourProvider/TourProvider';
+import { TabSpecificField } from '../../../../enums/entity.enum';
 import { Table } from '../../../../generated/entity/data/table';
 import { ProfileSampleType } from '../../../../generated/metadataIngestion/databaseServiceProfilerPipeline';
 import { TestCase } from '../../../../generated/tests/testCase';
+import { Include } from '../../../../generated/type/include';
 import { usePaging } from '../../../../hooks/paging/usePaging';
+import useCustomLocation from '../../../../hooks/useCustomLocation/useCustomLocation';
 import { useFqn } from '../../../../hooks/useFqn';
 import {
   getLatestTableProfileByFqn,
   getTableDetailsByFQN,
 } from '../../../../rest/tableAPI';
-import { getListTestCase, ListTestCaseParams } from '../../../../rest/testAPI';
+import {
+  getListTestCaseBySearch,
+  ListTestCaseParamsBySearch,
+} from '../../../../rest/testAPI';
 import { bytesToSize } from '../../../../utils/StringsUtils';
 import { generateEntityLink } from '../../../../utils/TableUtils';
 import { showErrorToast } from '../../../../utils/ToastUtils';
@@ -64,8 +72,8 @@ export const TableProfilerProvider = ({
   const { t } = useTranslation();
   const { fqn: datasetFQN } = useFqn();
   const { isTourOpen } = useTourProvider();
-  const testCasePaging = usePaging(PAGE_SIZE);
-  const location = useLocation();
+  const testCasePaging = usePaging(PAGE_SIZE_BASE);
+  const location = useCustomLocation();
   // profiler has its own api but sent's the data in Table type
   const [tableProfiler, setTableProfiler] = useState<Table>();
   // customMetric is fetch from table api and has response type of Table
@@ -148,7 +156,7 @@ export const TableProfilerProvider = ({
         value: profile?.createDateTime
           ? DateTime.fromJSDate(new Date(profile?.createDateTime))
               .toUTC()
-              .toFormat('MMM dd, yyyy HH:mm')
+              .toLocaleString(DateTime.DATE_MED)
           : '--',
       },
     ];
@@ -189,7 +197,7 @@ export const TableProfilerProvider = ({
     try {
       const profiler = await getLatestTableProfileByFqn(datasetFQN);
       const customMetricResponse = await getTableDetailsByFQN(datasetFQN, {
-        fields: 'customMetrics,columns',
+        fields: [TabSpecificField.CUSTOM_METRICS, TabSpecificField.COLUMNS],
       });
 
       setTableProfiler(profiler);
@@ -201,15 +209,21 @@ export const TableProfilerProvider = ({
     }
   };
 
-  const fetchAllTests = async (params?: ListTestCaseParams) => {
+  const fetchAllTests = async (params?: ListTestCaseParamsBySearch) => {
     setIsTestsLoading(true);
     try {
-      const { data, paging } = await getListTestCase({
+      const { data, paging } = await getListTestCaseBySearch({
+        ...DEFAULT_SORT_ORDER,
         ...params,
-        fields: 'testCaseResult, incidentId',
+        fields: [
+          TabSpecificField.TEST_CASE_RESULT,
+          TabSpecificField.INCIDENT_ID,
+        ],
+
         entityLink: generateEntityLink(datasetFQN ?? ''),
         includeAllTests: true,
         limit: testCasePaging.pageSize,
+        include: isTableDeleted ? Include.Deleted : Include.NonDeleted,
       });
 
       setAllTestCases(data);
@@ -296,8 +310,8 @@ export const TableProfilerProvider = ({
       {children}
       {settingModalVisible && (
         <ProfilerSettingsModal
-          columns={tableProfiler?.columns ?? []}
-          tableId={tableProfiler?.id ?? ''}
+          columns={table?.columns ?? []}
+          tableId={table?.id ?? ''}
           visible={settingModalVisible}
           onVisibilityChange={handleSettingModal}
         />

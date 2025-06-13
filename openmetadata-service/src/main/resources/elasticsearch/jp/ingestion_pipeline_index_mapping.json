@@ -70,6 +70,7 @@
           },
           "keyword": {
             "type": "keyword",
+            "normalizer": "lowercase_normalizer",
             "ignore_above": 256
           }
         }
@@ -91,44 +92,7 @@
       "href": {
         "type": "text"
       },
-      "domain" : {
-        "properties": {
-          "id": {
-            "type": "keyword",
-            "fields": {
-              "keyword": {
-                "type": "keyword",
-                "ignore_above": 36
-              }
-            }
-          },
-          "type": {
-            "type": "keyword"
-          },
-          "name": {
-            "type": "keyword",
-            "fields": {
-              "keyword": {
-                "type": "keyword",
-                "ignore_above": 256
-              }
-            }
-          },
-          "fullyQualifiedName": {
-            "type": "keyword"
-          },
-          "description": {
-            "type": "text"
-          },
-          "deleted": {
-            "type": "text"
-          },
-          "href": {
-            "type": "text"
-          }
-        }
-      },
-      "owner": {
+      "domain": {
         "properties": {
           "id": {
             "type": "keyword",
@@ -156,25 +120,26 @@
             "fields": {
               "keyword": {
                 "type": "keyword",
+                "normalizer": "lowercase_normalizer",
                 "ignore_above": 256
               }
             }
           },
           "fullyQualifiedName": {
-            "type": "text"
+            "type": "keyword"
           },
           "description": {
             "type": "text"
           },
           "deleted": {
-            "type": "text"
+            "type": "boolean"
           },
           "href": {
             "type": "text"
           }
         }
       },
-      "service": {
+      "owners": {
         "properties": {
           "id": {
             "type": "keyword",
@@ -197,6 +162,16 @@
               }
             }
           },
+          "displayName": {
+            "type": "keyword",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "normalizer": "lowercase_normalizer",
+                "ignore_above": 256
+              }
+            }
+          },
           "fullyQualifiedName": {
             "type": "text"
           },
@@ -204,7 +179,55 @@
             "type": "text"
           },
           "deleted": {
+            "type": "boolean"
+          },
+          "href": {
             "type": "text"
+          }
+        }
+      },
+      "service": {
+        "properties": {
+          "id": {
+            "type": "keyword",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "normalizer": "lowercase_normalizer",
+                "ignore_above": 36
+              }
+            }
+          },
+          "type": {
+            "type": "keyword"
+          },
+          "name": {
+            "type": "keyword",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "ignore_above": 256
+              }
+            }
+          },
+          "displayName": {
+            "type": "keyword",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "normalizer": "lowercase_normalizer",
+                "ignore_above": 256
+              }
+            }
+          },
+          "fullyQualifiedName": {
+            "type": "text"
+          },
+          "description": {
+            "type": "text"
+          },
+          "deleted": {
+            "type": "boolean"
           },
           "href": {
             "type": "text"
@@ -215,7 +238,7 @@
         "type": "keyword"
       },
       "deleted": {
-        "type": "text"
+        "type": "boolean"
       },
       "deployed": {
         "type": "text"
@@ -242,7 +265,14 @@
       "tags": {
         "properties": {
           "tagFQN": {
-            "type": "keyword"
+            "type": "keyword",
+            "normalizer": "lowercase_normalizer",
+            "fields": {
+              "text": {
+                "type": "text",
+                "analyzer": "om_analyzer"
+              }
+            }
           },
           "labelType": {
             "type": "keyword"
@@ -261,30 +291,54 @@
       "pipelineType": {
         "type": "keyword"
       },
+      "pipelineStatuses": {
+        "properties": {
+          "pipelineState": {
+            "type": "keyword"
+          },
+          "runId": {
+            "type": "keyword"
+          },
+          "timestamp": {
+            "type": "long"
+          },
+          "startDate": {
+            "type": "long"
+          },
+          "endDate": {
+            "type": "long"
+          }
+        }
+      },
       "entityType": {
         "type": "keyword"
       },
-      "suggest": {
-        "type": "completion",
-        "contexts": [
-          {
-            "name": "deleted",
-            "type": "category",
-            "path": "deleted"
-          }
-        ]
-      },
-      "service_suggest": {
-        "type": "completion"
-      },
       "totalVotes": {
-        "type": "long"
+        "type": "long",
+        "null_value": 0
       },
-      "votes" : {
+      "votes": {
         "type": "object"
       },
       "descriptionStatus": {
         "type": "keyword"
+      },
+      "applicationType": {
+        "type": "keyword",
+        "normalizer": "lowercase_normalizer"
+      },
+      "airflowConfig": {
+        "properties": {
+          "scheduleInterval": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "ignore_above": 256
+              }
+            }
+          }
+        }
       }
     }
   }

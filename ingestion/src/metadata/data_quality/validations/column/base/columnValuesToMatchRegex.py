@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -50,9 +50,8 @@ class BaseColumnValuesToMatchRegexValidator(BaseTestValidator):
         )
         try:
             column: Union[SQALikeColumn, Column] = self._get_column_name()
-            count = self._run_results(Metrics.COUNT, column)
-            match_count = self._run_results(
-                Metrics.REGEX_COUNT, column, expression=regex
+            count, match_count = self._run_results(
+                (Metrics.COUNT, Metrics.REGEX_COUNT), column, expression=regex
             )
         except (ValueError, RuntimeError) as exc:
             msg = f"Error computing {self.test_case.fullyQualifiedName}: {exc}"  # type: ignore
@@ -66,7 +65,7 @@ class BaseColumnValuesToMatchRegexValidator(BaseTestValidator):
             )
 
         if self.test_case.computePassedFailedRowCount:
-            row_count = self.get_row_count()
+            row_count = count
         else:
             row_count = None
 

@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -63,9 +63,7 @@ mock_salesforce_config = {
         "openMetadataServerConfig": {
             "hostPort": "http://localhost:8585/api",
             "authProvider": "openmetadata",
-            "securityConfig": {
-                "jwtToken": "eyJraWQiOiJHYjM4OWEtOWY3Ni1nZGpzLWE5MmotMDI0MmJrOTQzNTYiLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImlzQm90IjpmYWxzZSwiaXNzIjoib3Blbi1tZXRhZGF0YS5vcmciLCJpYXQiOjE2NjM5Mzg0NjIsImVtYWlsIjoiYWRtaW5Ab3Blbm1ldGFkYXRhLm9yZyJ9.tS8um_5DKu7HgzGBzS1VTA5uUjKWOCU0B_j08WXBiEC0mr0zNREkqVfwFDD-d24HlNEbrqioLsBuFRiwIWKc1m_ZlVQbG7P36RUxhuv2vbSp80FKyNM-Tj93FDzq91jsyNmsQhyNv_fNr3TXfzzSPjHt8Go0FMMP66weoKMgW2PbXlhVKwEuXUHyakLLzewm9UMeQaEiRzhiTMU3UkLXcKbYEJJvfNFcLwSl9W8JCO_l0Yj3ud-qt_nQYEZwqW6u5nfdQllN133iikV4fM5QZsMCnm8Rq1mvLR0y9bmJiD7fwM1tmJ791TUWqmKaTnP49U493VanKpUAfzIiOiIbhg"
-            },
+            "securityConfig": {"jwtToken": "salesforce"},
         }
     },
 }
@@ -107,7 +105,7 @@ MOCK_DATABASE_SCHEMA = DatabaseSchema(
 
 EXPECTED_COLUMN_VALUE = [
     Column(
-        name=ColumnName(__root__="Description"),
+        name=ColumnName("Description"),
         displayName=None,
         dataType=DataType.VARCHAR,
         arrayDataType=None,
@@ -117,7 +115,7 @@ EXPECTED_COLUMN_VALUE = [
         dataTypeDisplay="textarea",
         description="Contact Description",
         fullyQualifiedName=None,
-        tags=None,
+        tags=[],
         constraint=Constraint.NULL,
         ordinalPosition=1,
         jsonSchema=None,
@@ -126,7 +124,7 @@ EXPECTED_COLUMN_VALUE = [
         profile=None,
     ),
     Column(
-        name=ColumnName(__root__="OwnerId"),
+        name=ColumnName("OwnerId"),
         displayName=None,
         dataType=DataType.VARCHAR,
         arrayDataType=None,
@@ -136,7 +134,7 @@ EXPECTED_COLUMN_VALUE = [
         dataTypeDisplay="reference",
         description="Owner ID",
         fullyQualifiedName=None,
-        tags=None,
+        tags=[],
         constraint=Constraint.NOT_NULL,
         ordinalPosition=2,
         jsonSchema=None,
@@ -145,7 +143,7 @@ EXPECTED_COLUMN_VALUE = [
         profile=None,
     ),
     Column(
-        name=ColumnName(__root__="Phone"),
+        name=ColumnName("Phone"),
         displayName=None,
         dataType=DataType.VARCHAR,
         arrayDataType=None,
@@ -155,7 +153,7 @@ EXPECTED_COLUMN_VALUE = [
         dataTypeDisplay="phone",
         description="Phone",
         fullyQualifiedName=None,
-        tags=None,
+        tags=[],
         constraint=Constraint.NOT_NULL,
         ordinalPosition=3,
         jsonSchema=None,
@@ -164,7 +162,7 @@ EXPECTED_COLUMN_VALUE = [
         profile=None,
     ),
     Column(
-        name=ColumnName(__root__="CreatedById"),
+        name=ColumnName("CreatedById"),
         displayName=None,
         dataType=DataType.UNKNOWN,
         arrayDataType=None,
@@ -174,7 +172,7 @@ EXPECTED_COLUMN_VALUE = [
         dataTypeDisplay="anytype",
         description="Created By ID",
         fullyQualifiedName=None,
-        tags=None,
+        tags=[],
         constraint=Constraint.NOT_NULL,
         ordinalPosition=4,
         jsonSchema=None,
@@ -433,11 +431,11 @@ class SalesforceUnitTest(TestCase):
     @patch(
         "metadata.ingestion.source.database.salesforce.metadata.SalesforceSource.test_connection"
     )
-    @patch("simple_salesforce.Salesforce")
+    @patch("simple_salesforce.api.Salesforce")
     def __init__(self, methodName, salesforce, test_connection) -> None:
         super().__init__(methodName)
         test_connection.return_value = False
-        self.config = OpenMetadataWorkflowConfig.parse_obj(mock_salesforce_config)
+        self.config = OpenMetadataWorkflowConfig.model_validate(mock_salesforce_config)
         self.salesforce_source = SalesforceSource.create(
             mock_salesforce_config["source"],
             self.config.workflowConfig.openMetadataServerConfig,
@@ -451,8 +449,12 @@ class SalesforceUnitTest(TestCase):
             "database_schema"
         ] = MOCK_DATABASE_SCHEMA
 
-    def test_table_column(self):
-        result = self.salesforce_source.get_columns(SALESFORCE_FIELDS)
+    @patch(
+        "metadata.ingestion.source.database.salesforce.metadata.SalesforceSource.get_table_column_description"
+    )
+    def test_table_column(self, get_table_column_description):
+        get_table_column_description.return_value = None
+        result = self.salesforce_source.get_columns("TEST_TABLE", SALESFORCE_FIELDS)
         assert EXPECTED_COLUMN_VALUE == result
 
     def test_column_type(self):
@@ -461,3 +463,41 @@ class SalesforceUnitTest(TestCase):
                 SALESFORCE_FIELDS[i]["type"].upper()
             )
             assert result == EXPECTED_COLUMN_TYPE[i]
+
+    @patch(
+        "metadata.ingestion.source.database.salesforce.metadata.SalesforceSource.test_connection"
+    )
+    @patch("simple_salesforce.api.Salesforce")
+    def test_check_ssl(self, salesforce, test_connection) -> None:
+        mock_salesforce_config["source"]["serviceConnection"]["config"]["sslConfig"] = {
+            "caCertificate": """
+        -----BEGIN CERTIFICATE-----
+        sample caCertificateData  
+        -----END CERTIFICATE-----
+        """
+        }
+
+        mock_salesforce_config["source"]["serviceConnection"]["config"]["sslConfig"][
+            "sslKey"
+        ] = """
+        -----BEGIN CERTIFICATE-----
+        sample caCertificateData  
+        -----END CERTIFICATE-----
+        """
+        mock_salesforce_config["source"]["serviceConnection"]["config"]["sslConfig"][
+            "sslCertificate"
+        ] = """
+        -----BEGIN CERTIFICATE-----
+        sample sslCertificateData
+        -----END CERTIFICATE-----
+        """
+
+        test_connection.return_value = False
+        self.config = OpenMetadataWorkflowConfig.model_validate(mock_salesforce_config)
+        self.salesforce_source = SalesforceSource.create(
+            mock_salesforce_config["source"],
+            self.config.workflowConfig.openMetadataServerConfig,
+        )
+        self.assertTrue(self.salesforce_source.ssl_manager.ca_file_path)
+        self.assertTrue(self.salesforce_source.ssl_manager.cert_file_path)
+        self.assertTrue(self.salesforce_source.ssl_manager.key_file_path)

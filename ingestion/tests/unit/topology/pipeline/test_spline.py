@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -90,13 +90,13 @@ EXPECTED_CREATED_PIPELINES = CreatePipelineRequest(
             sourceUrl=MOCK_PIPELINE_URL,
         )
     ],
-    service=FullyQualifiedEntityName(__root__="spline_source"),
+    service=FullyQualifiedEntityName("spline_source"),
 )
 
 MOCK_PIPELINE_SERVICE = PipelineService(
     id="85811038-099a-11ed-861d-0242ac120002",
     name="spline_source",
-    fullyQualifiedName=FullyQualifiedEntityName(__root__="spline_source"),
+    fullyQualifiedName=FullyQualifiedEntityName("spline_source"),
     connection=PipelineConnection(),
     serviceType=PipelineServiceType.Airbyte,
 )
@@ -239,15 +239,15 @@ class SplineUnitTest(TestCase):
     def __init__(self, methodName, test_connection) -> None:
         super().__init__(methodName)
         test_connection.return_value = False
-        config = OpenMetadataWorkflowConfig.parse_obj(mock_spline_config)
+        config = OpenMetadataWorkflowConfig.model_validate(mock_spline_config)
         self.spline = SplineSource.create(
             mock_spline_config["source"],
             config.workflowConfig.openMetadataServerConfig,
         )
-        self.spline.context.get().__dict__["pipeline"] = MOCK_PIPELINE.name.__root__
+        self.spline.context.get().__dict__["pipeline"] = MOCK_PIPELINE.name.root
         self.spline.context.get().__dict__[
             "pipeline_service"
-        ] = MOCK_PIPELINE_SERVICE.name.__root__
+        ] = MOCK_PIPELINE_SERVICE.name.root
 
     def test_client(self):
         with patch.object(REST, "get", return_value=mock_data.get("execution-events")):

@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -88,7 +88,7 @@ class ColumnTypeParser:
         "BIGNUMERIC": "NUMERIC",
         "BIGSERIAL": "BIGINT",
         "BINARY": "BINARY",
-        "BIT": "INT",
+        "BIT": "BIT",
         "BLOB": "BLOB",
         "BOOL": "BOOLEAN",
         "BOOLEAN": "BOOLEAN",
@@ -148,7 +148,7 @@ class ColumnTypeParser:
         "MEDIUMBLOB": "MEDIUMBLOB",
         "MEDIUMINT": "INT",
         "MEDIUMTEXT": "MEDIUMTEXT",
-        "MONEY": "NUMBER",
+        "MONEY": "MONEY",
         "NCHAR": "CHAR",
         "NTEXT": "NTEXT",
         "NULL": "NULL",
@@ -276,6 +276,24 @@ class ColumnTypeParser:
         "WDC_BOOL": "BOOLEAN",
         "WDC_DATE": "DATE",
         "WDC_GEOMETRY": "GEOMETRY",
+        # SAP ERP
+        "CLNT": "INT",
+        "INT1": "INT",
+        "LRAW": "BLOB",
+        "UNIT": "CHAR",
+        "NUMC": "CHAR",
+        "LANG": "CHAR",
+        "CUKY": "CHAR",
+        "DATS": "DATE",
+        "TIMS": "TIME",
+        "FLTP": "FLOAT",
+        "QUAN": "DECIMAL",
+        "DEC": "DECIMAL",
+        "CURR": "DECIMAL",
+        "STRG": "STRING",
+        "RSTR": "STRING",
+        # azuresql
+        "HIERARCHYID": "UNKNOWN",
     }
 
     _COMPLEX_TYPE = re.compile("^(struct|map|array|uniontype)")
@@ -284,10 +302,12 @@ class ColumnTypeParser:
 
     try:
         # pylint: disable=import-outside-toplevel
-        from sqlalchemy.dialects.mssql import BIT
+        from teradatasqlalchemy import BYTE, VARBYTE
 
-        _COLUMN_TYPE_MAPPING[BIT] = "BINARY"
-        _SOURCE_TYPE_TO_OM_TYPE["BIT"] = "BINARY"
+        _COLUMN_TYPE_MAPPING[BYTE] = "BINARY"
+        _SOURCE_TYPE_TO_OM_TYPE["BYTE"] = "BINARY"
+        _COLUMN_TYPE_MAPPING[VARBYTE] = "VARBINARY"
+        _SOURCE_TYPE_TO_OM_TYPE["VARBYTE"] = "VARBINARY"
     except ImportError:
         pass
 
@@ -329,7 +349,6 @@ class ColumnTypeParser:
             arr_data_type = ColumnTypeParser._parse_primitive_datatype_string(
                 data_type[6:-1]
             )["dataType"]
-
             data_type_string = {
                 "dataType": "ARRAY",
                 "arrayDataType": arr_data_type,

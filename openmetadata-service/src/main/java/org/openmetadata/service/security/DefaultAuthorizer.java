@@ -16,9 +16,10 @@ package org.openmetadata.service.security;
 import static org.openmetadata.common.utils.CommonUtil.nullOrEmpty;
 import static org.openmetadata.schema.type.Permission.Access.ALLOW;
 import static org.openmetadata.service.exception.CatalogExceptionMessage.notAdmin;
+import static org.openmetadata.service.jdbi3.RoleRepository.DOMAIN_ONLY_ACCESS_ROLE;
 
+import jakarta.ws.rs.core.SecurityContext;
 import java.util.List;
-import javax.ws.rs.core.SecurityContext;
 import lombok.extern.slf4j.Slf4j;
 import org.openmetadata.schema.type.EntityReference;
 import org.openmetadata.schema.type.ResourcePermission;
@@ -80,7 +81,45 @@ public class DefaultAuthorizer implements Authorizer {
     if (isReviewer(resourceContext, subjectContext)) {
       return; // Reviewer of a resource gets admin level privilege on the resource
     }
+
+    // Domain access needs to be evaluated separately, user should not get any other domain data via
+    // one of the roles
+    if (subjectContext.hasAnyRole(DOMAIN_ONLY_ACCESS_ROLE)) {
+      PolicyEvaluator.hasDomainPermission(subjectContext, resourceContext, operationContext);
+    }
+
+    // Check if the user has resource level permission
     PolicyEvaluator.hasPermission(subjectContext, resourceContext, operationContext);
+  }
+
+  public void authorizeRequests(
+      SecurityContext securityContext, List<AuthRequest> requests, AuthorizationLogic logic) {
+    SubjectContext subjectContext = getSubjectContext(securityContext);
+
+    if (subjectContext.isAdmin()) {
+      return;
+    }
+
+    if (logic == AuthorizationLogic.ANY) {
+      boolean anySuccess = false;
+      for (AuthRequest req : requests) {
+        try {
+          PolicyEvaluator.hasPermission(
+              subjectContext, req.resourceContext(), req.operationContext());
+          anySuccess = true;
+          break;
+        } catch (AuthorizationException ignored) {
+        }
+      }
+      if (!anySuccess) {
+        throw new AuthorizationException("User does not have ANY of the required permissions.");
+      }
+    } else { // ALL
+      for (AuthRequest req : requests) {
+        PolicyEvaluator.hasPermission(
+            subjectContext, req.resourceContext(), req.operationContext());
+      }
+    }
   }
 
   @Override
@@ -90,6 +129,15 @@ public class DefaultAuthorizer implements Authorizer {
       return;
     }
     throw new AuthorizationException(notAdmin(securityContext.getUserPrincipal().getName()));
+  }
+
+  @Override
+  public void authorizeAdmin(String adminName) {
+    SubjectContext subjectContext = SubjectContext.getSubjectContext(adminName);
+    if (subjectContext.isAdmin()) {
+      return;
+    }
+    throw new AuthorizationException(notAdmin(adminName));
   }
 
   @Override
@@ -109,9 +157,9 @@ public class DefaultAuthorizer implements Authorizer {
 
   /** In 1.2, evaluate policies here instead of just checking the subject */
   @Override
-  public boolean authorizePII(SecurityContext securityContext, EntityReference owner) {
+  public boolean authorizePII(SecurityContext securityContext, List<EntityReference> owners) {
     SubjectContext subjectContext = getSubjectContext(securityContext);
-    return subjectContext.isAdmin() || subjectContext.isBot() || subjectContext.isOwner(owner);
+    return subjectContext.isAdmin() || subjectContext.isBot() || subjectContext.isOwner(owners);
   }
 
   public static SubjectContext getSubjectContext(SecurityContext securityContext) {

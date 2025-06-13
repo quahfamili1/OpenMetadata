@@ -13,9 +13,9 @@
 
 package org.openmetadata.service.events;
 
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.container.ContainerResponseContext;
 import java.util.UUID;
-import javax.ws.rs.container.ContainerRequestContext;
-import javax.ws.rs.container.ContainerResponseContext;
 import lombok.extern.slf4j.Slf4j;
 import org.openmetadata.schema.EntityInterface;
 import org.openmetadata.schema.EntityTimeSeriesInterface;
@@ -35,6 +35,7 @@ public class AuditEventHandler implements EventHandler {
     // Nothing to do
   }
 
+  @Override
   public Void process(
       ContainerRequestContext requestContext, ContainerResponseContext responseContext) {
     int responseCode = responseContext.getStatus();
@@ -51,8 +52,8 @@ public class AuditEventHandler implements EventHandler {
         // We should implement a parent class that captures the common fields and then have
         // EntityInterface and EntityTimeSeriesInterface extend it.
         // TODO: if we are just interested in entity's we can just do else and return null.
-        UUID entityId = null;
-        String entityType = "";
+        UUID entityId;
+        String entityType;
         if (responseContext.getEntity()
             instanceof EntityTimeSeriesInterface entityTimeSeriesInterface) {
           entityId = entityTimeSeriesInterface.getEntityReference().getId();

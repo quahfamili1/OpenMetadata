@@ -130,14 +130,6 @@ declare module 'Models' {
     signingIn?: boolean;
   };
 
-  export type ServiceData = {
-    collection: {
-      documentation: string;
-      href: string;
-      name: string;
-    };
-  };
-
   export type ServiceTypes =
     | 'databaseServices'
     | 'messagingServices'
@@ -146,7 +138,8 @@ declare module 'Models' {
     | 'mlmodelServices'
     | 'metadataServices'
     | 'storageServices'
-    | 'searchServices';
+    | 'searchServices'
+    | 'apiServices';
 
   export type SearchDataFunctionType = {
     queryString: string;

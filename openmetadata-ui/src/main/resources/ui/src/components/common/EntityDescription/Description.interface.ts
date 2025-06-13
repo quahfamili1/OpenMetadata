@@ -16,17 +16,13 @@ import { Table } from '../../../generated/entity/data/table';
 
 export interface DescriptionProps {
   entityName?: string;
-  owner?: Table['owner'];
+  owner?: Table['owners'];
   hasEditAccess?: boolean;
   removeBlur?: boolean;
   description?: string;
-  isEdit?: boolean;
   isReadOnly?: boolean;
   entityType: EntityType;
-  entityFqn?: string;
-  onThreadLinkSelect?: (value: string) => void;
-  onDescriptionEdit?: () => void;
-  onCancel?: () => void;
+  entityFullyQualifiedName?: string;
   onDescriptionUpdate?: (value: string) => Promise<void>;
   onSuggest?: (value: string) => void;
   onEntityFieldSelect?: (value: string) => void;

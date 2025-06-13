@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -10,12 +10,13 @@
 #  limitations under the License.
 """Db2 source module"""
 import traceback
-from typing import Optional
+from typing import Iterable, Optional
 
-from ibm_db_sa.base import DB2Dialect
-from sqlalchemy.engine import reflection
+from ibm_db_sa.base import ischema_names
+from ibm_db_sa.reflection import DB2Reflector, OS390Reflector
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.engine.row import LegacyRow
+from sqlalchemy.sql.sqltypes import BOOLEAN
 
 from metadata.generated.schema.entity.services.connections.database.db2Connection import (
     Db2Connection,
@@ -26,19 +27,17 @@ from metadata.generated.schema.metadataIngestion.workflow import (
 from metadata.ingestion.api.steps import InvalidSourceException
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
 from metadata.ingestion.source.database.common_db_source import CommonDbSourceService
+from metadata.ingestion.source.database.db2.utils import get_unique_constraints
 from metadata.utils.logger import ingestion_logger
 
 logger = ingestion_logger()
 
 
-@reflection.cache
-def get_pk_constraint(
-    self, bind, table_name, schema=None, **kw
-):  # pylint: disable=unused-argument
-    return {"constrained_columns": [], "name": "undefined"}
+ischema_names.update({"BOOLEAN": BOOLEAN})
 
 
-DB2Dialect.get_pk_constraint = get_pk_constraint
+DB2Reflector.get_unique_constraints = get_unique_constraints
+OS390Reflector.get_unique_constraints = get_unique_constraints
 
 
 class Db2Source(CommonDbSourceService):
@@ -51,13 +50,20 @@ class Db2Source(CommonDbSourceService):
     def create(
         cls, config_dict, metadata: OpenMetadata, pipeline_name: Optional[str] = None
     ):
-        config: WorkflowSource = WorkflowSource.parse_obj(config_dict)
-        connection: Db2Connection = config.serviceConnection.__root__.config
+        config: WorkflowSource = WorkflowSource.model_validate(config_dict)
+        connection: Db2Connection = config.serviceConnection.root.config
         if not isinstance(connection, Db2Connection):
             raise InvalidSourceException(
                 f"Expected Db2Connection, but got {connection}"
             )
         return cls(config, metadata)
+
+    def get_raw_database_schema_names(self) -> Iterable[str]:
+        if self.service_connection.__dict__.get("databaseSchema"):
+            yield self.service_connection.databaseSchema
+        else:
+            for schema_name in self.inspector.get_schema_names():
+                yield schema_name.rstrip()
 
     @staticmethod
     def get_table_description(

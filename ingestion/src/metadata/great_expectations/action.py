@@ -1,8 +1,8 @@
 #  Copyright 2022 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,7 +17,7 @@ checkpoints actions.
 """
 import logging
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Dict, List, Optional, Union, cast
 
 from great_expectations.checkpoint.actions import ValidationAction
@@ -31,6 +31,8 @@ from great_expectations.core.expectation_validation_result import (
 )
 from great_expectations.data_asset.data_asset import DataAsset
 from great_expectations.data_context.data_context import DataContext
+
+from metadata.generated.schema.type.basic import Timestamp
 
 try:
     from great_expectations.data_context.types.resource_identifiers import (
@@ -94,6 +96,7 @@ class OpenMetadataValidationAction(ValidationAction):
     def __init__(
         self,
         data_context: DataContext,  # type: ignore
+        name: str = "OpenMetadataValidationAction",
         *,
         config_file_path: Optional[str] = None,
         database_service_name: Optional[str] = None,
@@ -101,7 +104,7 @@ class OpenMetadataValidationAction(ValidationAction):
         database_name: Optional[str] = None,
         table_name: Optional[str] = None,
     ):
-        super().__init__(data_context)
+        super().__init__(data_context, name=name)
         self.database_service_name = database_service_name
         self.database_name = database_name
         self.table_name = table_name
@@ -150,9 +153,8 @@ class OpenMetadataValidationAction(ValidationAction):
             )
 
         if table_entity:
-            test_suite = self._check_or_create_test_suite(table_entity)
             for result in validation_result_suite.results:
-                self._handle_test_case(result, table_entity, test_suite)
+                self._handle_test_case(result, table_entity)
 
     @staticmethod
     def _get_checkpoint_batch_spec(
@@ -219,7 +221,7 @@ class OpenMetadataValidationAction(ValidationAction):
                 entity=Table, fields=["testSuite"]
             ).entities
             if f"{database}.{schema_name}.{table_name}"
-            in entity.fullyQualifiedName.__root__
+            in entity.fullyQualifiedName.root
         ]
 
         if len(table_entity) > 1:
@@ -248,14 +250,14 @@ class OpenMetadataValidationAction(ValidationAction):
 
         if table_entity.testSuite:
             test_suite = self.ometa_conn.get_by_name(
-                TestSuite, table_entity.testSuite.fullyQualifiedName.__root__
+                TestSuite, table_entity.testSuite.fullyQualifiedName
             )
             test_suite = cast(TestSuite, test_suite)
             return test_suite
 
         create_test_suite = CreateTestSuiteRequest(
-            name=f"{table_entity.fullyQualifiedName.__root__}.TestSuite",
-            executableEntityReference=table_entity.fullyQualifiedName.__root__,
+            name=f"{table_entity.fullyQualifiedName.root}.TestSuite",
+            basicEntityReference=table_entity.fullyQualifiedName.root,
         )  # type: ignore
         test_suite = self.ometa_conn.create_or_update_executable_test_suite(
             create_test_suite
@@ -373,9 +375,7 @@ class OpenMetadataValidationAction(ValidationAction):
 
         return [test_result_value]
 
-    def _handle_test_case(
-        self, result: Dict, table_entity: Table, test_suite: TestSuite
-    ):
+    def _handle_test_case(self, result: Dict, table_entity: Table):
         """Handle adding test to table entity based on the test case.
         Test Definitions will be created on the fly from the results of the
         great expectations run. We will then write the test case results to the
@@ -384,7 +384,6 @@ class OpenMetadataValidationAction(ValidationAction):
         Args:
             result: GE test result
             table_entity: table entity object
-            test_suite: test suite object
         """
 
         try:
@@ -403,7 +402,7 @@ class OpenMetadataValidationAction(ValidationAction):
             )
 
             test_case_fqn = self._build_test_case_fqn(
-                table_entity.fullyQualifiedName.__root__,
+                table_entity.fullyQualifiedName.root,
                 result,
             )
 
@@ -411,27 +410,26 @@ class OpenMetadataValidationAction(ValidationAction):
                 test_case_fqn,
                 entity_link=get_entity_link(
                     Table,
-                    fqn=table_entity.fullyQualifiedName.__root__,
+                    fqn=table_entity.fullyQualifiedName.root,
                     column_name=fqn.split_test_case_fqn(test_case_fqn).column,
                 ),
-                test_suite_fqn=test_suite.fullyQualifiedName.__root__,
-                test_definition_fqn=test_definition.fullyQualifiedName.__root__,
+                test_definition_fqn=test_definition.fullyQualifiedName.root,
                 test_case_parameter_values=self._get_test_case_params_value(result),
             )
 
             self.ometa_conn.add_test_case_results(
                 test_results=TestCaseResult(
-                    timestamp=int(datetime.now(timezone.utc).timestamp() * 1000),
+                    timestamp=Timestamp(int(datetime.now().timestamp() * 1000)),
                     testCaseStatus=TestCaseStatus.Success
                     if result["success"]
                     else TestCaseStatus.Failed,
                     testResultValue=self._get_test_result_value(result),
                 ),  # type: ignore
-                test_case_fqn=test_case.fullyQualifiedName.__root__,
+                test_case_fqn=test_case.fullyQualifiedName.root,
             )
 
             logger.debug(
-                f"Test case result for {test_case.fullyQualifiedName.__root__} successfully ingested"
+                f"Test case result for {test_case.fullyQualifiedName.root} successfully ingested"
             )
 
         except Exception as exc:

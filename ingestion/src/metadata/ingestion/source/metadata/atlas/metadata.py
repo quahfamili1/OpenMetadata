@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -41,13 +41,16 @@ from metadata.generated.schema.type.entityLineage import EntitiesEdge
 from metadata.generated.schema.type.entityReference import EntityReference
 from metadata.ingestion.api.models import Either, Entity, StackTraceError
 from metadata.ingestion.api.steps import InvalidSourceException, Source
+from metadata.ingestion.connections.test_connections import (
+    raise_test_connection_exception,
+)
 from metadata.ingestion.models.ometa_classification import OMetaTagAndClassification
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
 from metadata.ingestion.source.connections import get_connection, get_test_connection_fn
 from metadata.ingestion.source.database.column_type_parser import ColumnTypeParser
 from metadata.ingestion.source.metadata.atlas.client import AtlasClient
 from metadata.utils import fqn
-from metadata.utils.helpers import get_database_name_for_lineage
+from metadata.utils.helpers import get_database_name_for_lineage, retry_with_docker_host
 from metadata.utils.logger import ingestion_logger
 from metadata.utils.metadata_service_helper import SERVICE_TYPE_MAPPER
 from metadata.utils.tag_utils import get_ometa_tag_and_classification, get_tag_labels
@@ -67,6 +70,7 @@ class AtlasSource(Source):
     tables: Dict[str, Any]
     topics: Dict[str, Any]
 
+    @retry_with_docker_host()
     def __init__(
         self,
         config: WorkflowSource,
@@ -75,7 +79,7 @@ class AtlasSource(Source):
         super().__init__()
         self.config = config
         self.metadata = metadata
-        self.service_connection = self.config.serviceConnection.__root__.config
+        self.service_connection = self.config.serviceConnection.root.config
 
         self.atlas_client = get_connection(self.service_connection)
         self.connection_obj = self.atlas_client
@@ -96,8 +100,8 @@ class AtlasSource(Source):
     def create(
         cls, config_dict, metadata: OpenMetadata, pipeline_name: Optional[str] = None
     ):
-        config: WorkflowSource = WorkflowSource.parse_obj(config_dict)
-        connection: AtlasConnection = config.serviceConnection.__root__.config
+        config: WorkflowSource = WorkflowSource.model_validate(config_dict)
+        connection: AtlasConnection = config.serviceConnection.root.config
         if not isinstance(connection, AtlasConnection):
             raise InvalidSourceException(
                 f"Expected AtlasConnection, but got {connection}"
@@ -209,7 +213,7 @@ class AtlasSource(Source):
                     database_fqn = fqn.build(
                         self.metadata,
                         entity_type=Database,
-                        service_name=self.service.name.__root__,
+                        service_name=self.service.name.root,
                         database_name=database_name,
                     )
                     database_object = self.metadata.get_by_name(
@@ -226,7 +230,7 @@ class AtlasSource(Source):
                     database_schema_fqn = fqn.build(
                         self.metadata,
                         entity_type=DatabaseSchema,
-                        service_name=self.service.name.__root__,
+                        service_name=self.service.name.root,
                         database_name=database_name,
                         schema_name=db_entity["displayText"],
                     )
@@ -252,7 +256,7 @@ class AtlasSource(Source):
                     table_fqn = fqn.build(
                         metadata=self.metadata,
                         entity_type=Table,
-                        service_name=self.service.name.__root__,
+                        service_name=self.service.name.root,
                         database_name=database_name,
                         schema_name=db_entity["displayText"],
                         table_name=tbl_attrs["name"],
@@ -335,7 +339,6 @@ class AtlasSource(Source):
                 col_guid = col["guid"]
                 col_ref_entity = referred_entities[col_guid]
                 column = col_ref_entity["attributes"]
-                col_data_length = "1"
                 om_column = Column(
                     name=column["name"],
                     description=column.get("comment", None),
@@ -343,7 +346,7 @@ class AtlasSource(Source):
                         column["dataType"].upper()
                     ),
                     dataTypeDisplay=column["dataType"],
-                    dataLength=col_data_length,
+                    dataLength=1,
                     ordinalPosition=ordinal_pos,
                 )
                 om_cols.append(om_column)
@@ -377,7 +380,7 @@ class AtlasSource(Source):
                 from_fqn = fqn.build(
                     self.metadata,
                     entity_type=Table,
-                    service_name=self.service.name.__root__,
+                    service_name=self.service.name.root,
                     database_name=get_database_name_for_lineage(
                         self.service, db_entity["displayText"]
                     ),
@@ -406,7 +409,7 @@ class AtlasSource(Source):
                         to_fqn = fqn.build(
                             self.metadata,
                             entity_type=Table,
-                            service_name=self.service.name.__root__,
+                            service_name=self.service.name.root,
                             database_name=get_database_name_for_lineage(
                                 self.service, db_entity["displayText"]
                             ),
@@ -469,13 +472,16 @@ class AtlasSource(Source):
         if entity_type == "table":
             table: Table = self.metadata.get_by_name(entity=Table, fqn=to_fqn)
             if table:
-                return EntityReference(id=table.id.__root__, type="table")
+                return EntityReference(id=table.id.root, type="table")
         if entity_type == "pipeline":
             pipeline: Pipeline = self.metadata.get_by_name(entity=Pipeline, fqn=to_fqn)
             if pipeline:
-                return EntityReference(id=pipeline.id.__root__, type="pipeline")
+                return EntityReference(id=pipeline.id.root, type="pipeline")
         return None
 
     def test_connection(self) -> None:
         test_connection_fn = get_test_connection_fn(self.service_connection)
-        test_connection_fn(self.metadata, self.connection_obj, self.service_connection)
+        result = test_connection_fn(
+            self.metadata, self.connection_obj, self.service_connection
+        )
+        raise_test_connection_exception(result)

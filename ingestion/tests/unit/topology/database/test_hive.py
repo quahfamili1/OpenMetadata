@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -63,14 +63,7 @@ mock_hive_config = {
         "openMetadataServerConfig": {
             "hostPort": "http://localhost:8585/api",
             "authProvider": "openmetadata",
-            "securityConfig": {
-                "jwtToken": "eyJraWQiOiJHYjM4OWEtOWY3Ni1nZGpzLWE5MmotMDI0MmJrOTQzNTYiLCJ0eXAiOiJKV1QiLCJhbGc"
-                "iOiJSUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImlzQm90IjpmYWxzZSwiaXNzIjoib3Blbi1tZXRhZGF0YS5vcmciLCJpYXQiOjE"
-                "2NjM5Mzg0NjIsImVtYWlsIjoiYWRtaW5Ab3Blbm1ldGFkYXRhLm9yZyJ9.tS8um_5DKu7HgzGBzS1VTA5uUjKWOCU0B_j08WXB"
-                "iEC0mr0zNREkqVfwFDD-d24HlNEbrqioLsBuFRiwIWKc1m_ZlVQbG7P36RUxhuv2vbSp80FKyNM-Tj93FDzq91jsyNmsQhyNv_fN"
-                "r3TXfzzSPjHt8Go0FMMP66weoKMgW2PbXlhVKwEuXUHyakLLzewm9UMeQaEiRzhiTMU3UkLXcKbYEJJvfNFcLwSl9W8JCO_l0Yj3u"
-                "d-qt_nQYEZwqW6u5nfdQllN133iikV4fM5QZsMCnm8Rq1mvLR0y9bmJiD7fwM1tmJ791TUWqmKaTnP49U493VanKpUAfzIiOiIbhg"
-            },
+            "securityConfig": {"jwtToken": "hive"},
         }
     },
 }
@@ -145,12 +138,12 @@ MOCK_COLUMN_VALUE = [
 
 EXPECTED_DATABASE = [
     CreateDatabaseRequest(
-        name=EntityName(__root__="sample_database"),
+        name=EntityName("sample_database"),
         displayName=None,
         description=None,
         tags=None,
-        owner=None,
-        service=FullyQualifiedEntityName(__root__="hive_source_test"),
+        owners=None,
+        service=FullyQualifiedEntityName("hive_source_test"),
         dataProducts=None,
         default=False,
         retentionPeriod=None,
@@ -164,11 +157,11 @@ EXPECTED_DATABASE = [
 
 EXPECTED_DATABASE_SCHEMA = [
     CreateDatabaseSchemaRequest(
-        name=EntityName(__root__="sample_schema"),
+        name=EntityName("sample_schema"),
         displayName=None,
         description=None,
-        owner=None,
-        database=FullyQualifiedEntityName(__root__="hive_source_test.sample_database"),
+        owners=None,
+        database=FullyQualifiedEntityName("hive_source_test.sample_database"),
         dataProducts=None,
         tags=None,
         retentionPeriod=None,
@@ -182,13 +175,13 @@ EXPECTED_DATABASE_SCHEMA = [
 
 EXPECTED_TABLE = [
     CreateTableRequest(
-        name=EntityName(__root__="sample_table"),
+        name=EntityName("sample_table"),
         displayName=None,
         description=None,
         tableType=TableType.Regular.name,
         columns=[
             Column(
-                name=ColumnName(__root__="sample_col_1"),
+                name=ColumnName("sample_col_1"),
                 displayName=None,
                 dataType=DataType.VARCHAR.name,
                 arrayDataType=None,
@@ -207,7 +200,7 @@ EXPECTED_TABLE = [
                 customMetrics=None,
             ),
             Column(
-                name=ColumnName(__root__="sample_col_2"),
+                name=ColumnName("sample_col_2"),
                 displayName=None,
                 dataType=DataType.INT.name,
                 arrayDataType=None,
@@ -226,7 +219,7 @@ EXPECTED_TABLE = [
                 customMetrics=None,
             ),
             Column(
-                name=ColumnName(__root__="sample_col_3"),
+                name=ColumnName("sample_col_3"),
                 displayName=None,
                 dataType=DataType.VARCHAR.name,
                 arrayDataType=None,
@@ -245,7 +238,7 @@ EXPECTED_TABLE = [
                 customMetrics=None,
             ),
             Column(
-                name=ColumnName(__root__="sample_col_4"),
+                name=ColumnName("sample_col_4"),
                 displayName=None,
                 dataType=DataType.VARCHAR.name,
                 arrayDataType=None,
@@ -267,9 +260,9 @@ EXPECTED_TABLE = [
         tableConstraints=[],
         tablePartition=None,
         tableProfilerConfig=None,
-        owner=None,
+        owners=None,
         databaseSchema=FullyQualifiedEntityName(
-            __root__="hive_source_test.sample_database.sample_schema"
+            "hive_source_test.sample_database.sample_schema"
         ),
         tags=None,
         schemaDefinition=None,
@@ -331,14 +324,14 @@ class HiveUnitTest(TestCase):
     ) -> None:
         super().__init__(methodName)
         test_connection.return_value = False
-        self.config = OpenMetadataWorkflowConfig.parse_obj(mock_hive_config)
+        self.config = OpenMetadataWorkflowConfig.model_validate(mock_hive_config)
         self.hive = HiveSource.create(
             mock_hive_config["source"],
             self.config.workflowConfig.openMetadataServerConfig,
         )
         self.hive.context.get().__dict__[
             "database_service"
-        ] = MOCK_DATABASE_SERVICE.name.__root__
+        ] = MOCK_DATABASE_SERVICE.name.root
         self.thread_id = self.hive.context.get_current_thread_id()
         self.hive._inspector_map[self.thread_id] = types.SimpleNamespace()
 
@@ -354,30 +347,29 @@ class HiveUnitTest(TestCase):
 
     def test_yield_database(self):
         assert EXPECTED_DATABASE == [
-            either.right
-            for either in self.hive.yield_database(MOCK_DATABASE.name.__root__)
+            either.right for either in self.hive.yield_database(MOCK_DATABASE.name.root)
         ]
 
         self.hive.context.get().__dict__[
             "database_service"
-        ] = MOCK_DATABASE_SERVICE.name.__root__
-        self.hive.context.get().__dict__["database"] = MOCK_DATABASE.name.__root__
+        ] = MOCK_DATABASE_SERVICE.name.root
+        self.hive.context.get().__dict__["database"] = MOCK_DATABASE.name.root
 
     def test_yield_schema(self):
         assert EXPECTED_DATABASE_SCHEMA == [
             either.right
             for either in self.hive.yield_database_schema(
-                schema_name=MOCK_DATABASE_SCHEMA.name.__root__
+                schema_name=MOCK_DATABASE_SCHEMA.name.root
             )
         ]
 
         self.hive.context.get().__dict__[
             "database_schema"
-        ] = MOCK_DATABASE_SCHEMA.name.__root__
+        ] = MOCK_DATABASE_SCHEMA.name.root
 
     def test_yield_table(self):
         self.hive.inspector.get_columns = (
-            lambda table_name, schema_name, db_name: MOCK_COLUMN_VALUE
+            lambda table_name, schema_name, table_type, db_name: MOCK_COLUMN_VALUE
         )
         assert EXPECTED_TABLE == [
             either.right

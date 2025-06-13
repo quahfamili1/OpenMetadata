@@ -13,14 +13,17 @@
 import { CloseOutlined, DragOutlined } from '@ant-design/icons';
 import { Card, Col, Row, Typography } from 'antd';
 import { AxiosError } from 'axios';
-import { isEmpty, isUndefined } from 'lodash';
 import {
-  default as React,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+  first,
+  groupBy,
+  isEmpty,
+  isUndefined,
+  last,
+  omit,
+  reduce,
+  sortBy,
+} from 'lodash';
+import { default as React, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Area,
@@ -33,18 +36,20 @@ import {
 } from 'recharts';
 import { ReactComponent as TotalDataAssetsEmptyIcon } from '../../../../assets/svg/data-insight-no-data-placeholder.svg';
 import { CHART_WIDGET_DAYS_DURATION } from '../../../../constants/constants';
-import { TOTAL_ENTITY_CHART_COLOR } from '../../../../constants/DataInsight.constants';
 import { SIZE } from '../../../../enums/common.enum';
 import { WidgetWidths } from '../../../../enums/CustomizablePage.enum';
-import { DataReportIndex } from '../../../../generated/dataInsight/dataInsightChart';
+import { SystemChartType } from '../../../../enums/DataInsight.enum';
 import {
-  DataInsightChartResult,
-  DataInsightChartType,
-} from '../../../../generated/dataInsight/dataInsightChartResult';
-import { getAggregateChartData } from '../../../../rest/DataInsightAPI';
-import { axisTickFormatter } from '../../../../utils/ChartUtils';
-import { getGraphDataByEntityType } from '../../../../utils/DataInsightUtils';
+  DataInsightCustomChartResult,
+  getChartPreviewByName,
+} from '../../../../rest/DataInsightAPI';
+import { entityChartColor } from '../../../../utils/CommonUtils';
 import {
+  CustomTooltip,
+  getRandomHexColor,
+} from '../../../../utils/DataInsightUtils';
+import {
+  customFormatDateTime,
   getCurrentMillis,
   getEpochMillisForPastDays,
 } from '../../../../utils/date-time/DateTimeUtils';
@@ -61,39 +66,80 @@ const TotalDataAssetsWidget = ({
   widgetKey,
   selectedGridSize,
 }: TotalDataAssetsWidgetProps) => {
-  const [totalEntitiesByType, setTotalEntitiesByType] =
-    useState<DataInsightChartResult>();
-
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-
-  const { data, entities, total, relativePercentage, latestData } =
-    useMemo(() => {
-      return getGraphDataByEntityType(
-        totalEntitiesByType?.data ?? [],
-        DataInsightChartType.TotalEntitiesByType
-      );
-    }, [totalEntitiesByType]);
-
   const { t } = useTranslation();
+  const [isLoading, setIsLoading] = React.useState<boolean>(false);
+  const [chartData, setChartData] =
+    React.useState<DataInsightCustomChartResult>();
 
-  const fetchTotalEntitiesByType = useCallback(async () => {
+  const { rightSideEntityList, latestData, graphData, changeInValue, total } =
+    useMemo(() => {
+      const results = chartData?.results ?? [];
+      const timeStampResults = groupBy(results, 'day');
+      const labels: string[] = [];
+
+      const graphData = Object.entries(timeStampResults).map(([key, value]) => {
+        const keys = value.reduce((acc, curr) => {
+          curr.group && labels.push(curr.group);
+
+          return { ...acc, [curr.group ?? 'count']: curr.count };
+        }, {});
+
+        return {
+          day: +key,
+          dayString: customFormatDateTime(+key, 'MMM dd'),
+          ...keys,
+        };
+      });
+
+      const finalData = sortBy(graphData, 'day');
+      const uniqueLabels = Array.from(new Set(labels));
+
+      const latestData: Record<string, number> = omit(last(finalData ?? {}), [
+        'day',
+        'dayString',
+      ]);
+
+      const total = reduce(latestData, (acc, value) => acc + value, 0);
+
+      const firstRecordTotal = reduce(
+        omit(first(finalData) ?? {}, ['day', 'dayString']),
+        (acc, value) => acc + value,
+        0
+      );
+
+      const changeInValue = firstRecordTotal
+        ? (total - firstRecordTotal) / firstRecordTotal
+        : 0;
+
+      return {
+        rightSideEntityList: uniqueLabels,
+        latestData,
+        graphData: finalData,
+        changeInValue,
+        total,
+      };
+    }, [chartData?.results]);
+
+  const fetchData = async () => {
     setIsLoading(true);
     try {
-      const params = {
-        startTs: getEpochMillisForPastDays(selectedDays),
-        endTs: getCurrentMillis(),
-        dataInsightChartName: DataInsightChartType.TotalEntitiesByType,
-        dataReportIndex: DataReportIndex.EntityReportDataIndex,
+      const filter = {
+        start: getEpochMillisForPastDays(selectedDays),
+        end: getCurrentMillis(),
       };
-      const response = await getAggregateChartData(params);
 
-      setTotalEntitiesByType(response);
+      const response = await getChartPreviewByName(
+        SystemChartType.TotalDataAssets,
+        filter
+      );
+
+      setChartData(response);
     } catch (error) {
       showErrorToast(error as AxiosError);
     } finally {
       setIsLoading(false);
     }
-  }, [selectedDays]);
+  };
 
   const handleCloseClick = useCallback(() => {
     !isUndefined(handleRemoveWidget) && handleRemoveWidget(widgetKey);
@@ -105,14 +151,14 @@ const TotalDataAssetsWidget = ({
   );
 
   useEffect(() => {
-    fetchTotalEntitiesByType();
+    fetchData();
   }, [selectedDays]);
 
   return (
     <Card
-      className="total-data-insight-card"
+      className="total-data-insight-card data-insight-card-chart"
       data-testid="total-assets-widget"
-      id={DataInsightChartType.TotalEntitiesByType}
+      id={SystemChartType.TotalDataAssets}
       loading={isLoading}>
       {isEditView && (
         <Row gutter={8} justify="end">
@@ -132,7 +178,7 @@ const TotalDataAssetsWidget = ({
           </Col>
         </Row>
       )}
-      {isEmpty(data) ? (
+      {isEmpty(graphData) ? (
         <Row className="h-full">
           <Col span={14}>
             <Typography.Text className="font-medium">
@@ -159,24 +205,34 @@ const TotalDataAssetsWidget = ({
             <div className="p-t-md">
               <ResponsiveContainer height={250} width="100%">
                 <AreaChart
-                  data={data}
+                  data={graphData}
                   margin={{
                     top: 10,
-                    right: isWidgetSizeLarge ? 50 : 20,
-                    left: -30,
+                    right: 30,
+                    left: 0,
                     bottom: 0,
                   }}
                   syncId="anyId">
+                  <XAxis
+                    allowDuplicatedCategory={false}
+                    dataKey="day"
+                    tickFormatter={(value: number) =>
+                      customFormatDateTime(value, 'MMM dd')
+                    }
+                  />
+                  <YAxis />
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="timestamp" />
-                  <YAxis tickFormatter={(value) => axisTickFormatter(value)} />
-                  <Tooltip />
-                  {entities.map((entity, i) => (
+                  <Tooltip
+                    content={<CustomTooltip timeStampKey="day" />}
+                    wrapperStyle={{ pointerEvents: 'auto' }}
+                  />
+                  {rightSideEntityList.map((label, i) => (
                     <Area
-                      dataKey={entity}
-                      fill={TOTAL_ENTITY_CHART_COLOR[i]}
-                      key={entity}
-                      stroke={TOTAL_ENTITY_CHART_COLOR[i]}
+                      dataKey={label}
+                      fill={entityChartColor(i) ?? getRandomHexColor()}
+                      key={label}
+                      name={label}
+                      stroke={entityChartColor(i) ?? getRandomHexColor()}
                     />
                   ))}
                 </AreaChart>
@@ -184,13 +240,11 @@ const TotalDataAssetsWidget = ({
             </div>
           </Col>
           {isWidgetSizeLarge && (
-            <Col
-              className="overflow-y-scroll overflow-x-hidden h-max-full"
-              span={10}>
+            <Col className="total-entity-insight-summary-container" span={10}>
               <TotalEntityInsightSummary
-                entities={entities}
+                entities={rightSideEntityList}
                 latestData={latestData}
-                relativePercentage={relativePercentage}
+                relativePercentage={changeInValue}
                 selectedDays={selectedDays}
                 total={total}
               />

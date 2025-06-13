@@ -13,7 +13,9 @@
 import { AxiosError } from 'axios';
 import { noop, toString } from 'lodash';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useHistory, useParams } from 'react-router-dom';
+import { EntityType } from '../../../enums/entity.enum';
 import { Domain } from '../../../generated/entity/domains/domain';
 import { EntityHistory } from '../../../generated/type/entityHistory';
 import { useFqn } from '../../../hooks/useFqn';
@@ -43,6 +45,8 @@ const DomainVersion = () => {
     {} as EntityHistory
   );
   const [selectedData, setSelectedData] = useState<Domain>();
+
+  const { t } = useTranslation();
 
   const fetchVersionsInfo = useCallback(async () => {
     if (!domain) {
@@ -121,10 +125,12 @@ const DomainVersion = () => {
   }, [domain, version]);
 
   return (
-    <PageLayoutV1 pageTitle="Domain version">
+    <PageLayoutV1
+      pageTitle={t('label.entity-version', { entity: t('label.domain') })}>
       <div className="version-data page-container p-0">{domainPageRender}</div>
       <EntityVersionTimeLine
         currentVersion={toString(version)}
+        entityType={EntityType.DOMAIN}
         versionHandler={onVersionChange}
         versionList={versionList}
         onBack={onBackHandler}

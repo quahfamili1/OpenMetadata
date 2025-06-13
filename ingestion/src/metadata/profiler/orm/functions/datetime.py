@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -188,7 +188,7 @@ def _(elements, compiler, **kwargs):  # pylint: disable=unused-argument
             "Bigquery does not support `month` or `year` interval for table partitioned on timestamp",
             "field types. You can set the `interval_unit to day or hour directly from OpenMetadata UI`."
             # pylint: disable=line-too-long
-            "Visit https://docs.open-metadata.org/connectors/ingestion/workflows/profiler#4-updating-profiler-setting-at-the-table-level for more details.",
+            "Visit https://docs.open-metadata.org/how-to-guides/data-quality-observability/profiler/workflow#4-updating-profiler-setting-at-the-table-level for more details.",
         )
 
     return (

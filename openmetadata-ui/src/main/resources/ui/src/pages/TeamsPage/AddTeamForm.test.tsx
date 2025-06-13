@@ -10,7 +10,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-import { render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import React from 'react';
 import { TeamType } from '../../generated/entity/teams/team';
 import AddTeamForm from './AddTeamForm';
@@ -20,6 +20,43 @@ const mockSave = jest.fn();
 
 jest.mock('../../constants/constants', () => ({
   VALIDATION_MESSAGES: [],
+}));
+
+jest.mock('../../utils/RouterUtils', () => ({
+  getDomainPath: jest.fn(),
+}));
+
+jest.mock('../../components/common/DomainLabel/DomainLabel.component', () => ({
+  DomainLabel: jest.fn().mockImplementation(() => <div>DomainLabel</div>),
+}));
+
+jest.mock('../../utils/formUtils', () => ({
+  getField: jest
+    .fn()
+    .mockImplementation(({ name }) => <div data-testid={name}>{name}</div>),
+}));
+
+jest.mock('../../utils/TeamUtils', () => ({
+  getTeamOptionsFromType: jest.fn().mockImplementation(() => [
+    {
+      label: 'Organization',
+      value: TeamType.Organization,
+      type: TeamType.Organization,
+    },
+  ]),
+}));
+
+jest.mock('../../utils/ToastUtils', () => ({
+  showErrorToast: jest.fn(),
+}));
+
+jest.mock('../../hooks/useDomainStore', () => ({
+  useDomainStore: jest.fn().mockImplementation(() => ({
+    activeDomainEntityRef: {
+      id: '1',
+      type: 'domain',
+    },
+  })),
 }));
 
 describe('AddTeamForm component', () => {
@@ -36,7 +73,108 @@ describe('AddTeamForm component', () => {
 
     expect(getByTestId('name')).toBeInTheDocument();
     expect(getByTestId('email')).toBeInTheDocument();
-    expect(getByTestId('editor')).toBeInTheDocument();
+    expect(getByTestId('description')).toBeInTheDocument();
     expect(getByTestId('team-selector')).toBeInTheDocument();
+    expect(getByTestId('isJoinable')).toBeInTheDocument();
+  });
+
+  it('should call onCancel function when cancel button is clicked', () => {
+    const { getByText } = render(
+      <AddTeamForm
+        visible
+        isLoading={false}
+        parentTeamType={TeamType.Organization}
+        onCancel={mockCancel}
+        onSave={mockSave}
+      />
+    );
+
+    getByText('Cancel').click();
+
+    expect(mockCancel).toHaveBeenCalled();
+  });
+
+  it('should call onSave function when save button is clicked', async () => {
+    const { getByText, getByTestId } = render(
+      <AddTeamForm
+        visible
+        isLoading={false}
+        parentTeamType={TeamType.Organization}
+        onCancel={mockCancel}
+        onSave={mockSave}
+      />
+    );
+
+    // input name
+    const nameInput = getByTestId('name');
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: 'test' } });
+    });
+
+    // input displayName
+    const displayNameInput = getByTestId('display-name');
+    await act(async () => {
+      fireEvent.change(displayNameInput, { target: { value: 'Test Team' } });
+    });
+
+    // input email
+    const emailInput = getByTestId('email');
+    await act(async () => {
+      fireEvent.change(emailInput, { target: { value: 'testteam@gmail.com' } });
+    });
+
+    // save form
+    const saveButton = getByText('label.save');
+
+    await act(async () => {
+      fireEvent.click(saveButton);
+    });
+
+    expect(mockSave).toHaveBeenCalledWith({
+      name: 'test',
+      displayName: 'Test Team',
+      email: 'testteam@gmail.com',
+      description: '',
+      teamType: 'Group',
+    });
+  });
+
+  it('should call onSave function when save button is clicked with isJoinable default value', async () => {
+    const { getByText, getByTestId } = render(
+      <AddTeamForm
+        visible
+        isLoading={false}
+        parentTeamType={TeamType.Organization}
+        onCancel={mockCancel}
+        onSave={mockSave}
+      />
+    );
+
+    // input name
+    const nameInput = getByTestId('name');
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: 'test' } });
+    });
+
+    // input displayName
+    const displayNameInput = getByTestId('display-name');
+    await act(async () => {
+      fireEvent.change(displayNameInput, { target: { value: 'Test Team' } });
+    });
+
+    // save form
+    const saveButton = getByText('label.save');
+
+    await act(async () => {
+      fireEvent.click(saveButton);
+    });
+
+    expect(mockSave).toHaveBeenCalledWith({
+      name: 'test',
+      displayName: 'Test Team',
+      email: undefined,
+      description: '',
+      teamType: 'Group',
+    });
   });
 });

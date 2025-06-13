@@ -27,7 +27,7 @@ import { useForm } from 'antd/lib/form/Form';
 import { ItemType } from 'antd/lib/menu/hooks/useItems';
 import { AxiosError } from 'axios';
 import classNames from 'classnames';
-import { cloneDeep, toString } from 'lodash';
+import { cloneDeep, isEmpty, isEqual, toString } from 'lodash';
 import React, {
   useCallback,
   useEffect,
@@ -40,23 +40,20 @@ import { useHistory, useParams } from 'react-router-dom';
 import { ReactComponent as EditIcon } from '../../../assets/svg/edit-new.svg';
 import { ReactComponent as DeleteIcon } from '../../../assets/svg/ic-delete.svg';
 import { ReactComponent as DomainIcon } from '../../../assets/svg/ic-domain.svg';
+import { ReactComponent as SubDomainIcon } from '../../../assets/svg/ic-subdomain.svg';
 import { ReactComponent as VersionIcon } from '../../../assets/svg/ic-version.svg';
 import { ReactComponent as IconDropdown } from '../../../assets/svg/menu.svg';
 import { ReactComponent as StyleIcon } from '../../../assets/svg/style.svg';
 import { ManageButtonItemLabel } from '../../../components/common/ManageButtonContentItem/ManageButtonContentItem.component';
 import { EntityHeader } from '../../../components/Entity/EntityHeader/EntityHeader.component';
-import EntitySummaryPanel from '../../../components/Explore/EntitySummaryPanel/EntitySummaryPanel.component';
-import AssetsTabs, {
-  AssetsTabRef,
-} from '../../../components/Glossary/GlossaryTerms/tabs/AssetsTabs.component';
+import { AssetsTabRef } from '../../../components/Glossary/GlossaryTerms/tabs/AssetsTabs.component';
 import { AssetsOfEntity } from '../../../components/Glossary/GlossaryTerms/tabs/AssetsTabs.interface';
 import EntityNameModal from '../../../components/Modals/EntityNameModal/EntityNameModal.component';
-import PageLayoutV1 from '../../../components/PageLayoutV1/PageLayoutV1';
 import { FQN_SEPARATOR_CHAR } from '../../../constants/char.constants';
 import {
   DE_ACTIVE_COLOR,
   ERROR_MESSAGE,
-  getEntityDetailsPath,
+  PAGE_SIZE_LARGE,
 } from '../../../constants/constants';
 import { EntityField } from '../../../constants/Feeds.constants';
 import { usePermissionProvider } from '../../../context/PermissionProvider/PermissionProvider';
@@ -64,18 +61,33 @@ import {
   OperationPermission,
   ResourceEntity,
 } from '../../../context/PermissionProvider/PermissionProvider.interface';
-import { EntityType } from '../../../enums/entity.enum';
+import { EntityTabs, EntityType } from '../../../enums/entity.enum';
 import { SearchIndex } from '../../../enums/search.enum';
 import { CreateDataProduct } from '../../../generated/api/domains/createDataProduct';
-import { DataProduct } from '../../../generated/entity/domains/dataProduct';
+import { CreateDomain } from '../../../generated/api/domains/createDomain';
 import { Domain } from '../../../generated/entity/domains/domain';
 import { ChangeDescription } from '../../../generated/entity/type';
+import { PageType } from '../../../generated/system/ui/page';
 import { Style } from '../../../generated/type/tagLabel';
+import { useApplicationStore } from '../../../hooks/useApplicationStore';
+import { useCustomPages } from '../../../hooks/useCustomPages';
 import { useFqn } from '../../../hooks/useFqn';
 import { addDataProducts } from '../../../rest/dataProductAPI';
+import { addDomains } from '../../../rest/domainAPI';
 import { searchData } from '../../../rest/miscAPI';
+import { searchQuery } from '../../../rest/searchAPI';
+import { formatDomainsResponse } from '../../../utils/APIUtils';
 import { getIsErrorMatch } from '../../../utils/CommonUtils';
-import { getQueryFilterToExcludeDomainTerms } from '../../../utils/DomainUtils';
+import {
+  checkIfExpandViewSupported,
+  getDetailsTabWithNewLabel,
+  getTabLabelMapFromTabs,
+} from '../../../utils/CustomizePage/CustomizePageUtils';
+import domainClassBase from '../../../utils/Domain/DomainClassBase';
+import {
+  getQueryFilterForDomain,
+  getQueryFilterToExcludeDomainTerms,
+} from '../../../utils/DomainUtils';
 import { getEntityName } from '../../../utils/EntityUtils';
 import { getEntityVersionByField } from '../../../utils/EntityVersionUtils';
 import Fqn from '../../../utils/Fqn';
@@ -84,6 +96,7 @@ import {
   getDomainDetailsPath,
   getDomainPath,
   getDomainVersionsPath,
+  getEntityDetailsPath,
 } from '../../../utils/RouterUtils';
 import {
   escapeESReservedCharacters,
@@ -91,16 +104,17 @@ import {
 } from '../../../utils/StringsUtils';
 import { showErrorToast } from '../../../utils/ToastUtils';
 import DeleteWidgetModal from '../../common/DeleteWidget/DeleteWidgetModal';
-import TabsLabel from '../../common/TabsLabel/TabsLabel.component';
+import { AlignRightIconButton } from '../../common/IconButtons/EditIconButton';
+import Loader from '../../common/Loader/Loader';
+import { GenericProvider } from '../../Customization/GenericProvider/GenericProvider';
 import { AssetSelectionModal } from '../../DataAssets/AssetsSelectionModal/AssetSelectionModal';
 import { EntityDetailsObjectInterface } from '../../Explore/ExplorePage.interface';
 import StyleModal from '../../Modals/StyleModal/StyleModal.component';
 import AddDomainForm from '../AddDomainForm/AddDomainForm.component';
+import AddSubDomainModal from '../AddSubDomainModal/AddSubDomainModal.component';
 import '../domain.less';
-import { DomainFormType, DomainTabs } from '../DomainPage.interface';
-import DataProductsTab from '../DomainTabs/DataProductsTab/DataProductsTab.component';
+import { DomainFormType } from '../DomainPage.interface';
 import { DataProductsTabRef } from '../DomainTabs/DataProductsTab/DataProductsTab.interface';
-import DocumentationTab from '../DomainTabs/DocumentationTab/DocumentationTab.component';
 import { DomainDetailsPageProps } from './DomainDetailsPage.interface';
 
 const DomainDetailsPage = ({
@@ -108,21 +122,27 @@ const DomainDetailsPage = ({
   onUpdate,
   onDelete,
   isVersionsView = false,
+  isFollowing,
+  isFollowingLoading,
+  handleFollowingClick,
 }: DomainDetailsPageProps) => {
   const { t } = useTranslation();
   const [form] = useForm();
-  const { getEntityPermission } = usePermissionProvider();
+  const { getEntityPermission, permissions } = usePermissionProvider();
   const history = useHistory();
   const { tab: activeTab, version } =
-    useParams<{ tab: string; version: string }>();
+    useParams<{ tab: EntityTabs; version: string }>();
   const { fqn: domainFqn } = useFqn();
+  const { currentUser } = useApplicationStore();
+
   const assetTabRef = useRef<AssetsTabRef>(null);
   const dataProductsTabRef = useRef<DataProductsTabRef>(null);
   const [domainPermission, setDomainPermission] = useState<OperationPermission>(
     DEFAULT_ENTITY_PERMISSION
   );
-  const [assetModalVisible, setAssetModelVisible] = useState(false);
+  const [assetModalVisible, setAssetModalVisible] = useState(false);
   const [showAddDataProductModal, setShowAddDataProductModal] = useState(false);
+  const [showAddSubDomainModal, setShowAddSubDomainModal] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [isDelete, setIsDelete] = useState<boolean>(false);
   const [isNameEditing, setIsNameEditing] = useState<boolean>(false);
@@ -131,6 +151,20 @@ const DomainDetailsPage = ({
     useState<EntityDetailsObjectInterface>();
   const [assetCount, setAssetCount] = useState<number>(0);
   const [dataProductsCount, setDataProductsCount] = useState<number>(0);
+  const [subDomains, setSubDomains] = useState<Domain[]>([]);
+  const [isSubDomainsLoading, setIsSubDomainsLoading] =
+    useState<boolean>(false);
+  const encodedFqn = getEncodedFqn(
+    escapeESReservedCharacters(domain.fullyQualifiedName)
+  );
+  const { customizedPage, isLoading } = useCustomPages(PageType.Domain);
+  const [isTabExpanded, setIsTabExpanded] = useState(false);
+  const isSubDomain = useMemo(() => !isEmpty(domain.parent), [domain]);
+
+  const isOwner = useMemo(
+    () => domain.owners?.some((owner) => isEqual(owner.id, currentUser?.id)),
+    [domain, currentUser]
+  );
 
   const breadcrumbs = useMemo(() => {
     if (!domainFqn) {
@@ -182,20 +216,93 @@ const DomainDetailsPage = ({
   }, [domainPermission]);
 
   const addButtonContent = [
-    {
-      label: t('label.asset-plural'),
-      key: '1',
-      onClick: () => setAssetModelVisible(true),
-    },
-    {
-      label: t('label.data-product-plural'),
-      key: '2',
-      onClick: () => setShowAddDataProductModal(true),
-    },
+    ...(domainPermission.Create
+      ? [
+          {
+            label: t('label.asset-plural'),
+            key: '1',
+            onClick: () => setAssetModalVisible(true),
+          },
+          {
+            label: t('label.sub-domain-plural'),
+            key: '2',
+            onClick: () => setShowAddSubDomainModal(true),
+          },
+        ]
+      : []),
+    ...(isOwner || permissions.dataProduct.Create
+      ? [
+          {
+            label: t('label.data-product-plural'),
+            key: '3',
+            onClick: () => setShowAddDataProductModal(true),
+          },
+        ]
+      : []),
   ];
 
+  const fetchSubDomains = useCallback(async () => {
+    if (!isVersionsView) {
+      try {
+        setIsSubDomainsLoading(true);
+        const res = await searchData(
+          '',
+          1,
+          PAGE_SIZE_LARGE,
+          `(parent.fullyQualifiedName:"${encodedFqn}")`,
+          '',
+          '',
+          SearchIndex.DOMAIN
+        );
+
+        const data = formatDomainsResponse(res.data.hits.hits);
+        setSubDomains(data);
+      } catch (error) {
+        setSubDomains([]);
+        showErrorToast(
+          error as AxiosError,
+          t('server.entity-fetch-error', {
+            entity: t('label.sub-domain-lowercase'),
+          })
+        );
+      } finally {
+        setIsSubDomainsLoading(false);
+      }
+    }
+  }, [isVersionsView, encodedFqn]);
+
+  const addSubDomain = useCallback(
+    async (formData: CreateDomain) => {
+      const data = {
+        ...formData,
+        parent: domain.fullyQualifiedName,
+      };
+
+      try {
+        await addDomains(data as CreateDomain);
+        fetchSubDomains();
+      } catch (error) {
+        showErrorToast(
+          getIsErrorMatch(error as AxiosError, ERROR_MESSAGE.alreadyExist)
+            ? t('server.entity-already-exist', {
+                entity: t('label.sub-domain'),
+                entityPlural: t('label.sub-domain-lowercase-plural'),
+                name: data.name,
+              })
+            : (error as AxiosError),
+          t('server.add-entity-error', {
+            entity: t('label.sub-domain-lowercase'),
+          })
+        );
+      } finally {
+        setShowAddSubDomainModal(false);
+      }
+    },
+    [domain, fetchSubDomains]
+  );
+
   const addDataProduct = useCallback(
-    async (formData: CreateDataProduct) => {
+    async (formData: CreateDataProduct | CreateDomain) => {
       const data = {
         ...formData,
         domain: domain.fullyQualifiedName,
@@ -240,9 +347,6 @@ const DomainDetailsPage = ({
   const fetchDataProducts = async () => {
     if (!isVersionsView) {
       try {
-        const encodedFqn = getEncodedFqn(
-          escapeESReservedCharacters(domain.fullyQualifiedName)
-        );
         const res = await searchData(
           '',
           1,
@@ -256,6 +360,12 @@ const DomainDetailsPage = ({
         setDataProductsCount(res.data.hits.total.value ?? 0);
       } catch (error) {
         setDataProductsCount(0);
+        showErrorToast(
+          error as AxiosError,
+          t('server.entity-fetch-error', {
+            entity: t('label.data-product-lowercase'),
+          })
+        );
       }
     }
   };
@@ -263,22 +373,25 @@ const DomainDetailsPage = ({
   const fetchDomainAssets = async () => {
     if (domainFqn && !isVersionsView) {
       try {
-        const encodedFqn = getEncodedFqn(
-          escapeESReservedCharacters(domain.fullyQualifiedName)
-        );
-        const res = await searchData(
-          '',
-          1,
-          0,
-          `(domain.fullyQualifiedName:"${encodedFqn}") AND !(entityType:"dataProduct")`,
-          '',
-          '',
-          SearchIndex.ALL
-        );
+        const res = await searchQuery({
+          query: '',
+          pageNumber: 0,
+          pageSize: 0,
+          queryFilter,
+          searchIndex: SearchIndex.ALL,
+          filters: '',
+        });
 
-        setAssetCount(res.data.hits.total.value ?? 0);
+        const totalCount = res?.hits?.total.value ?? 0;
+        setAssetCount(totalCount);
       } catch (error) {
         setAssetCount(0);
+        showErrorToast(
+          error as AxiosError,
+          t('server.entity-fetch-error', {
+            entity: t('label.asset-plural-lowercase'),
+          })
+        );
       }
     }
   };
@@ -309,7 +422,7 @@ const DomainDetailsPage = ({
     setShowAddDataProductModal(true);
   }, []);
 
-  const onNameSave = (obj: { name: string; displayName: string }) => {
+  const onNameSave = (obj: { name: string; displayName?: string }) => {
     const { displayName } = obj;
     let updatedDetails = cloneDeep(domain);
 
@@ -325,8 +438,8 @@ const DomainDetailsPage = ({
   const onStyleSave = async (data: Style) => {
     const style: Style = {
       // if color/iconURL is empty or undefined send undefined
-      color: data.color ? data.color : undefined,
-      iconURL: data.iconURL ? data.iconURL : undefined,
+      color: data.color ?? undefined,
+      iconURL: data.iconURL ?? undefined,
     };
     const updatedDetails = {
       ...domain,
@@ -424,84 +537,42 @@ const DomainDetailsPage = ({
       : []),
   ];
 
+  const queryFilter = useMemo(() => {
+    return getQueryFilterForDomain(domainFqn);
+  }, [domainFqn]);
+
   const tabs = useMemo(() => {
-    return [
-      {
-        label: (
-          <TabsLabel
-            id={DomainTabs.DOCUMENTATION}
-            name={t('label.documentation')}
-          />
-        ),
-        key: DomainTabs.DOCUMENTATION,
-        children: (
-          <DocumentationTab
-            domain={domain}
-            isVersionsView={isVersionsView}
-            onUpdate={(data: Domain | DataProduct) => onUpdate(data as Domain)}
-          />
-        ),
-      },
-      ...(!isVersionsView
-        ? [
-            {
-              label: (
-                <TabsLabel
-                  count={dataProductsCount ?? 0}
-                  id={DomainTabs.DATA_PRODUCTS}
-                  isActive={activeTab === DomainTabs.DATA_PRODUCTS}
-                  name={t('label.data-product-plural')}
-                />
-              ),
-              key: DomainTabs.DATA_PRODUCTS,
-              children: (
-                <DataProductsTab
-                  permissions={domainPermission}
-                  ref={dataProductsTabRef}
-                  onAddDataProduct={onAddDataProduct}
-                />
-              ),
-            },
-            {
-              label: (
-                <TabsLabel
-                  count={assetCount ?? 0}
-                  id={DomainTabs.ASSETS}
-                  isActive={activeTab === DomainTabs.ASSETS}
-                  name={t('label.asset-plural')}
-                />
-              ),
-              key: DomainTabs.ASSETS,
-              children: (
-                <PageLayoutV1
-                  className="domain-asset-page-layout"
-                  pageTitle={t('label.domain')}
-                  rightPanel={
-                    previewAsset && (
-                      <EntitySummaryPanel
-                        entityDetails={previewAsset}
-                        handleClosePanel={() => setPreviewAsset(undefined)}
-                      />
-                    )
-                  }
-                  rightPanelWidth={400}>
-                  <AssetsTabs
-                    assetCount={assetCount}
-                    entityFqn={domainFqn}
-                    isSummaryPanelOpen={false}
-                    permissions={domainPermission}
-                    ref={assetTabRef}
-                    type={AssetsOfEntity.DOMAIN}
-                    onAddAsset={() => setAssetModelVisible(true)}
-                    onAssetClick={handleAssetClick}
-                    onRemoveAsset={handleAssetSave}
-                  />
-                </PageLayoutV1>
-              ),
-            },
-          ]
-        : []),
-    ];
+    const tabLabelMap = getTabLabelMapFromTabs(customizedPage?.tabs);
+
+    const tabs = domainClassBase.getDomainDetailPageTabs({
+      domain,
+      isVersionsView,
+      domainPermission,
+      subDomains,
+      dataProductsCount,
+      assetCount,
+      activeTab,
+      onAddDataProduct,
+      isSubDomainsLoading,
+      queryFilter,
+      assetTabRef,
+      dataProductsTabRef,
+      previewAsset,
+      setPreviewAsset,
+      setAssetModalVisible,
+      handleAssetClick,
+      handleAssetSave,
+      setShowAddSubDomainModal,
+      onAddSubDomain: addSubDomain,
+      showAddSubDomainModal,
+      labelMap: tabLabelMap,
+    });
+
+    return getDetailsTabWithNewLabel(
+      tabs,
+      customizedPage?.tabs,
+      EntityTabs.DOCUMENTATION
+    );
   }, [
     domain,
     domainPermission,
@@ -511,6 +582,10 @@ const DomainDetailsPage = ({
     assetCount,
     dataProductsCount,
     activeTab,
+    subDomains,
+    isSubDomainsLoading,
+    queryFilter,
+    customizedPage?.tabs,
   ]);
 
   useEffect(() => {
@@ -519,45 +594,81 @@ const DomainDetailsPage = ({
     fetchDataProducts();
   }, [domain.fullyQualifiedName]);
 
+  useEffect(() => {
+    fetchSubDomains();
+  }, [domainFqn]);
+
+  const iconData = useMemo(() => {
+    if (domain.style?.iconURL) {
+      return (
+        <img
+          alt="domain-icon"
+          className="align-middle"
+          data-testid="icon"
+          height={36}
+          src={domain.style.iconURL}
+          width={32}
+        />
+      );
+    } else if (isSubDomain) {
+      return (
+        <SubDomainIcon
+          className="align-middle"
+          color={DE_ACTIVE_COLOR}
+          height={36}
+          name="folder"
+          width={32}
+        />
+      );
+    }
+
+    return (
+      <DomainIcon
+        className="align-middle"
+        color={DE_ACTIVE_COLOR}
+        height={36}
+        name="folder"
+        width={32}
+      />
+    );
+  }, [domain, isSubDomain]);
+
+  const toggleTabExpanded = () => {
+    setIsTabExpanded(!isTabExpanded);
+  };
+
+  const isExpandViewSupported = useMemo(
+    () => checkIfExpandViewSupported(tabs[0], activeTab, PageType.Domain),
+    [tabs[0], activeTab]
+  );
+  if (isLoading) {
+    return <Loader />;
+  }
+
   return (
     <>
       <Row
         className="domain-details"
         data-testid="domain-details"
         gutter={[0, 12]}>
-        <Col className="p-x-md" flex="auto">
+        <Col flex="auto">
           <EntityHeader
             breadcrumb={breadcrumbs}
             entityData={{ ...domain, displayName, name }}
             entityType={EntityType.DOMAIN}
-            icon={
-              domain.style?.iconURL ? (
-                <img
-                  className="align-middle"
-                  data-testid="icon"
-                  height={36}
-                  src={domain.style.iconURL}
-                  width={32}
-                />
-              ) : (
-                <DomainIcon
-                  className="align-middle"
-                  color={DE_ACTIVE_COLOR}
-                  height={36}
-                  name="folder"
-                  width={32}
-                />
-              )
-            }
+            handleFollowingClick={handleFollowingClick}
+            icon={iconData}
+            isFollowing={isFollowing}
+            isFollowingLoading={isFollowingLoading}
             serviceName=""
             titleColor={domain.style?.color}
           />
         </Col>
-        <Col className="p-x-md" flex="320px">
-          <div style={{ textAlign: 'right' }}>
-            {!isVersionsView && domainPermission.Create && (
+        <Col flex="320px">
+          <div className="d-flex gap-3 justify-end">
+            {!isVersionsView && addButtonContent.length > 0 && (
               <Dropdown
-                className="m-l-xs"
+                className="m-l-xs h-10"
                 data-testid="domain-details-add-button-menu"
                 menu={{
                   items: addButtonContent,
@@ -573,7 +684,7 @@ const DomainDetailsPage = ({
               </Dropdown>
             )}
 
-            <ButtonGroup className="p-l-xs" size="small">
+            <ButtonGroup className="spaced" size="small">
               {domain?.version && (
                 <Tooltip
                   title={t(
@@ -633,16 +744,36 @@ const DomainDetailsPage = ({
           </div>
         </Col>
 
-        <Col span={24}>
-          <Tabs
-            destroyInactiveTabPane
-            activeKey={activeTab ?? DomainTabs.DOCUMENTATION}
-            className="domain-details-page-tabs"
-            data-testid="tabs"
-            items={tabs}
-            onChange={handleTabChange}
-          />
-        </Col>
+        <GenericProvider<Domain>
+          customizedPage={customizedPage}
+          data={domain}
+          isTabExpanded={isTabExpanded}
+          isVersionView={isVersionsView}
+          permissions={domainPermission}
+          type={EntityType.DOMAIN}
+          onUpdate={onUpdate}>
+          <Col className="domain-details-page-tabs" span={24}>
+            <Tabs
+              destroyInactiveTabPane
+              activeKey={activeTab}
+              className="tabs-new"
+              data-testid="tabs"
+              items={tabs}
+              tabBarExtraContent={
+                isExpandViewSupported && (
+                  <AlignRightIconButton
+                    className={isTabExpanded ? 'rotate-180' : ''}
+                    title={
+                      isTabExpanded ? t('label.collapse') : t('label.expand')
+                    }
+                    onClick={toggleTabExpanded}
+                  />
+                )
+              }
+              onChange={handleTabChange}
+            />
+          </Col>
+        </GenericProvider>
       </Row>
 
       {showAddDataProductModal && (
@@ -688,7 +819,7 @@ const DomainDetailsPage = ({
           open={assetModalVisible}
           queryFilter={getQueryFilterToExcludeDomainTerms(domainFqn)}
           type={AssetsOfEntity.DOMAIN}
-          onCancel={() => setAssetModelVisible(false)}
+          onCancel={() => setAssetModalVisible(false)}
           onSave={handleAssetSave}
         />
       )}
@@ -706,7 +837,7 @@ const DomainDetailsPage = ({
           }}
         />
       )}
-      <EntityNameModal
+      <EntityNameModal<Domain>
         entity={domain}
         title={t('label.edit-entity', {
           entity: t('label.display-name'),
@@ -721,6 +852,13 @@ const DomainDetailsPage = ({
         onCancel={() => setIsStyleEditing(false)}
         onSubmit={onStyleSave}
       />
+      {showAddSubDomainModal && (
+        <AddSubDomainModal
+          open={showAddSubDomainModal}
+          onCancel={() => setShowAddSubDomainModal(false)}
+          onSubmit={(data: CreateDomain) => addSubDomain(data)}
+        />
+      )}
     </>
   );
 };

@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,20 +16,74 @@ To be used by OpenMetadata class
 import functools
 import json
 import traceback
-from typing import Generic, Iterable, List, Optional, Set, Type, TypeVar
+from typing import (
+    Generic,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Set,
+    Type,
+    TypeVar,
+    Union,
+)
+from urllib.parse import quote_plus
 
-from pydantic import BaseModel
-from requests.utils import quote
+from pydantic import Field
+from typing_extensions import Annotated
 
 from metadata.generated.schema.entity.data.container import Container
 from metadata.generated.schema.entity.data.query import Query
+from metadata.generated.schema.entity.data.table import Table, TableType
+from metadata.ingestion.models.custom_pydantic import BaseModel
 from metadata.ingestion.ometa.client import REST, APIError
-from metadata.utils.elasticsearch import ES_INDEX_MAP
+from metadata.ingestion.ometa.utils import quote
+from metadata.ingestion.source.models import TableView
+from metadata.utils.elasticsearch import ES_INDEX_MAP, get_entity_from_es_result
 from metadata.utils.logger import ometa_logger
 
 logger = ometa_logger()
 
 T = TypeVar("T", bound=BaseModel)
+
+
+class TotalModel(BaseModel):
+    """Elasticsearch total model"""
+
+    relation: str
+    value: int
+
+
+class HitsModel(BaseModel):
+    """Elasticsearch hits model"""
+
+    index: Annotated[str, Field(description="Index name", alias="_index")]
+    type: Annotated[
+        Optional[str],
+        Field(default=None, description="Type of the document", alias="_type"),
+    ]
+    id: Annotated[str, Field(description="Document ID", alias="_id")]
+    score: Annotated[
+        Optional[float], Field(description="Score of the document", alias="_score")
+    ]
+    source: Annotated[dict, Field(description="Document source", alias="_source")]
+    sort: Annotated[
+        List[str],
+        Field(description="Sort field. Used internally to get the next page FQN"),
+    ]
+
+
+class ESHits(BaseModel):
+    """Elasticsearch hits model"""
+
+    total: Annotated[TotalModel, Field(description="Total matched elements")]
+    hits: Annotated[List[HitsModel], Field(description="List of matched elements")]
+
+
+class ESResponse(BaseModel):
+    """Elasticsearch response model"""
+
+    hits: ESHits
 
 
 class ESMixin(Generic[T]):
@@ -43,7 +97,13 @@ class ESMixin(Generic[T]):
 
     fqdn_search = (
         "/search/fieldQuery?fieldName={field_name}&fieldValue={field_value}&from={from_}"
-        "&size={size}&index={index}"
+        "&size={size}&index={index}&deleted=false"
+    )
+
+    # sort_field needs to be unique for the pagination to work, so we can use the FQN
+    paginate_query = (
+        "/search/query?q=&size={size}&deleted=false{filter}&index={index}{include_fields}"
+        "&sort_field=fullyQualifiedName{after}"
     )
 
     @functools.lru_cache(maxsize=512)
@@ -65,14 +125,20 @@ class ESMixin(Generic[T]):
         if response:
             if fields:
                 fields = fields.split(",")
-            return [
-                self.get_by_name(
+
+            entities = []
+            for hit in response["hits"]["hits"]:
+                entity = self.get_by_name(
                     entity=entity_type,
                     fqn=hit["_source"]["fullyQualifiedName"],
                     fields=fields,
                 )
-                for hit in response["hits"]["hits"]
-            ] or None
+                if entity is None:
+                    continue
+
+                entities.append(entity)
+
+            return entities or None
 
         return None
 
@@ -252,3 +318,218 @@ class ESMixin(Generic[T]):
             logger.debug(traceback.format_exc())
             logger.warning(f"Unknown error extracting results from ES query [{err}]")
             return None
+
+    def _get_include_fields_query(self, fields: Optional[List[str]]) -> str:
+        """Get the include fields query"""
+        if fields:
+            return "&include_source_fields=" + "&include_source_fields=".join(fields)
+        return ""
+
+    def _paginate_es_internal(
+        self,
+        entity: Type[T],
+        query_filter: Optional[str] = None,
+        size: int = 100,
+        include_fields: Optional[List[str]] = None,
+    ) -> Iterator[ESResponse]:
+        """Paginate through the ES results, ignoring individual errors"""
+        after: Optional[str] = None
+        error_pages = 0
+        query = functools.partial(
+            self.paginate_query.format,
+            index=ES_INDEX_MAP[entity.__name__],
+            filter="&query_filter=" + quote_plus(query_filter) if query_filter else "",
+            size=size,
+            include_fields=self._get_include_fields_query(include_fields),
+        )
+        while True:
+            query_string = query(
+                after="&search_after=" + quote_plus(after) if after else ""
+            )
+            response = self._get_es_response(query_string)
+
+            # Allow 3 errors getting pages before getting out of the loop
+            if not response:
+                error_pages += 1
+                if error_pages < 3:
+                    continue
+                else:
+                    break
+            yield response
+
+            # Get next page
+            last_hit = response.hits.hits[-1] if response.hits.hits else None
+            if not last_hit or not last_hit.sort:
+                logger.debug("No more pages to fetch")
+                break
+
+            after = ",".join(last_hit.sort)
+
+    def paginate_es(
+        self,
+        entity: Type[T],
+        query_filter: Optional[str] = None,
+        size: int = 100,
+        fields: Optional[List[str]] = None,
+    ) -> Iterator[T]:
+        for response in self._paginate_es_internal(entity, query_filter, size):
+            yield from self._yield_hits_from_api(
+                response=response, entity=entity, fields=fields
+            )
+
+    def _get_es_response(self, query_string: str) -> Optional[ESResponse]:
+        """Get the Elasticsearch response"""
+        try:
+            response = self.client.get(query_string)
+            return ESResponse.model_validate(response)
+        except Exception as exc:
+            logger.debug(traceback.format_exc())
+            logger.warning(f"Error while getting ES response: {exc}")
+        return None
+
+    def _yield_hits_from_api(
+        self, response: ESResponse, entity: Type[T], fields: Optional[List[str]]
+    ) -> Iterator[T]:
+        """Get the data from the API based on ES responses"""
+        for hit in response.hits.hits:
+            try:
+                yield self.get_by_name(
+                    entity=entity,
+                    fqn=hit.source["fullyQualifiedName"],
+                    fields=fields,
+                    nullable=False,  # Raise an error if we don't find the Entity
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Error while getting {hit.source['fullyQualifiedName']} - {exc}"
+                )
+
+    def yield_es_view_def(
+        self,
+        service_name: str,
+        incremental: bool = False,
+    ) -> Iterable[TableView]:
+        """
+        Get the view definition from ES
+        """
+
+        from metadata.utils import fqn
+
+        query = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {
+                            "bool": {
+                                "should": [
+                                    {"term": {"service.name.keyword": service_name}}
+                                ]
+                            }
+                        },
+                        {
+                            "bool": {
+                                "must": [
+                                    {
+                                        "bool": {
+                                            "should": [
+                                                {
+                                                    "term": {
+                                                        "tableType": TableType.View.value
+                                                    }
+                                                },
+                                                {
+                                                    "term": {
+                                                        "tableType": TableType.MaterializedView.value
+                                                    }
+                                                },
+                                                {
+                                                    "term": {
+                                                        "tableType": TableType.SecureView.value
+                                                    }
+                                                },
+                                                {
+                                                    "term": {
+                                                        "tableType": TableType.Dynamic.value
+                                                    }
+                                                },
+                                                {
+                                                    "term": {
+                                                        "tableType": TableType.Stream.value
+                                                    }
+                                                },
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        {"bool": {"should": [{"term": {"deleted": False}}]}},
+                        {
+                            "bool": {
+                                "should": [{"exists": {"field": "schemaDefinition"}}]
+                            }
+                        },
+                    ]
+                }
+            }
+        }
+        if incremental:
+            query.get("query").get("bool").get("must").append(
+                {
+                    "bool": {
+                        "should": [
+                            {"term": {"processedLineage": False}},
+                            {
+                                "bool": {
+                                    "must_not": {
+                                        "exists": {"field": "processedLineage"}
+                                    }
+                                }
+                            },
+                        ]
+                    }
+                }
+            )
+        query = json.dumps(query)
+        for response in self._paginate_es_internal(
+            entity=Table,
+            query_filter=query,
+            include_fields=["schemaDefinition", "fullyQualifiedName"],
+        ):
+            for hit in response.hits.hits:
+                _, database_name, schema_name, table_name = fqn.split(
+                    hit.source["fullyQualifiedName"]
+                )
+                if hit.source.get("schemaDefinition"):
+                    yield TableView(
+                        view_definition=hit.source["schemaDefinition"],
+                        service_name=service_name,
+                        db_name=database_name,
+                        schema_name=schema_name,
+                        table_name=table_name,
+                    )
+
+    def search_in_any_service(
+        self,
+        entity_type: Type[T],
+        fqn_search_string: str,
+        fetch_multiple_entities: bool = False,
+    ) -> Optional[Union[List[Table], Table]]:
+        """
+        fetch table from es when with/without `db_service_name`
+        """
+        try:
+            entity_result = get_entity_from_es_result(
+                entity_list=self.es_search_from_fqn(
+                    entity_type=entity_type,
+                    fqn_search_string=fqn_search_string,
+                ),
+                fetch_multiple_entities=fetch_multiple_entities,
+            )
+            return entity_result
+        except Exception as exc:
+            logger.debug(
+                f"Error to fetch entity: fqn={fqn_search_string} from es: {exc}"
+            )
+            logger.debug(traceback.format_exc())
+        return None

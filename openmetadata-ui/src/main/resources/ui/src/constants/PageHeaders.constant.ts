@@ -11,6 +11,7 @@
  *  limitations under the License.
  */
 
+import brandClassBase from '../utils/BrandData/BrandClassBase';
 import i18n from '../utils/i18next/LocalUtil';
 
 export const PAGE_HEADERS = {
@@ -86,6 +87,10 @@ export const PAGE_HEADERS = {
     header: i18n.t('label.search'),
     subHeader: i18n.t('message.page-sub-header-for-search'),
   },
+  API_SERVICES: {
+    header: i18n.t('label.api-uppercase-plural'),
+    subHeader: i18n.t('message.page-sub-header-for-apis'),
+  },
   ACTIVITY_FEED: {
     header: i18n.t('label.activity-feed'),
     subHeader: i18n.t('message.page-sub-header-for-activity-feed'),
@@ -106,6 +111,18 @@ export const PAGE_HEADERS = {
     header: i18n.t('label.dashboard-plural'),
     subHeader: i18n.t('message.define-custom-property-for-entity', {
       entity: i18n.t('label.dashboard-plural'),
+    }),
+  },
+  DASHBOARD_DATA_MODEL_CUSTOM_ATTRIBUTES: {
+    header: i18n.t('label.dashboard-data-model-plural'),
+    subHeader: i18n.t('message.define-custom-property-for-entity', {
+      entity: i18n.t('label.dashboard-data-model-plural'),
+    }),
+  },
+  DATA_PRODUCT_CUSTOM_ATTRIBUTES: {
+    header: i18n.t('label.data-product-plural'),
+    subHeader: i18n.t('message.define-custom-property-for-entity', {
+      entity: i18n.t('label.data-product-plural'),
     }),
   },
   PIPELINES_CUSTOM_ATTRIBUTES: {
@@ -130,6 +147,12 @@ export const PAGE_HEADERS = {
     header: i18n.t('label.stored-procedure-plural'),
     subHeader: i18n.t('message.define-custom-property-for-entity', {
       entity: i18n.t('label.stored-procedure-plural'),
+    }),
+  },
+  DOMAIN_CUSTOM_ATTRIBUTES: {
+    header: i18n.t('label.domain-plural'),
+    subHeader: i18n.t('message.define-custom-property-for-entity', {
+      entity: i18n.t('label.domain-plural'),
     }),
   },
   SEARCH_INDEX_CUSTOM_ATTRIBUTES: {
@@ -176,11 +199,31 @@ export const PAGE_HEADERS = {
   },
   SETTING: {
     header: i18n.t('label.setting-plural'),
-    subHeader: i18n.t('message.page-sub-header-for-setting'),
+    subHeader: i18n.t('message.page-sub-header-for-setting', {
+      brandName: brandClassBase.getPageTitle(),
+    }),
   },
   LOGIN_CONFIGURATION: {
     header: i18n.t('label.login'),
     subHeader: i18n.t('message.page-sub-header-for-login-configuration'),
+  },
+  SEARCH_RBAC: {
+    header: i18n.t('label.search'),
+    subHeader: i18n.t('message.page-sub-header-for-search-setting'),
+  },
+  SEARCH_SETTINGS: {
+    header: i18n.t('label.search'),
+    subHeader: i18n.t('message.page-sub-header-for-search-setting'),
+  },
+  LINEAGE_CONFIG: {
+    header: i18n.t('label.lineage-config'),
+    subHeader: i18n.t('message.page-sub-header-for-lineage-config-setting'),
+  },
+  OM_URL_CONFIG: {
+    header: i18n.t('label.entity-configuration', {
+      entity: i18n.t('label.open-metadata-url'),
+    }),
+    subHeader: i18n.t('message.om-url-configuration-message'),
   },
   OM_HEALTH: {
     header: i18n.t('label.health-check'),
@@ -194,5 +237,27 @@ export const PAGE_HEADERS = {
     header: i18n.t('label.custom-metric'),
     // Todo: need to update message once @harshach provides the message
     subHeader: '',
+  },
+  API_COLLECTION_CUSTOM_ATTRIBUTES: {
+    header: i18n.t('label.api-collection-plural'),
+    subHeader: i18n.t('message.define-custom-property-for-entity', {
+      entity: i18n.t('label.api-collection-plural'),
+    }),
+  },
+  API_ENDPOINT_CUSTOM_ATTRIBUTES: {
+    header: i18n.t('label.api-endpoint-plural'),
+    subHeader: i18n.t('message.define-custom-property-for-entity', {
+      entity: i18n.t('label.api-endpoint-plural'),
+    }),
+  },
+  METRIC_CUSTOM_ATTRIBUTES: {
+    header: i18n.t('label.metric-plural'),
+    subHeader: i18n.t('message.define-custom-property-for-entity', {
+      entity: i18n.t('label.metric-plural'),
+    }),
+  },
+  PLATFORM_LINEAGE: {
+    header: i18n.t('label.lineage'),
+    subHeader: i18n.t('message.page-sub-header-for-platform-lineage'),
   },
 };

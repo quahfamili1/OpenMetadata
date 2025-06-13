@@ -13,16 +13,21 @@
 import { ReactNode } from 'react';
 import { DataAssetWithDomains } from '../../../components/DataAssets/DataAssetsHeader/DataAssetsHeader.interface';
 import { EntityType } from '../../../enums/entity.enum';
+import { User } from '../../../generated/entity/teams/user';
 import { EntityReference } from '../../../generated/entity/type';
 
 export type DomainLabelProps = {
   afterDomainUpdateAction?: (asset: DataAssetWithDomains) => void;
-  hasPermission: boolean;
-  domain: EntityReference | undefined;
+  hasPermission?: boolean;
+  domain: EntityReference | EntityReference[] | undefined;
   domainDisplayName?: ReactNode;
   entityType: EntityType;
   entityFqn: string;
   entityId: string;
   textClassName?: string;
   showDomainHeading?: boolean;
+  multiple?: boolean;
+  onUpdate?: (domain: EntityReference | EntityReference[]) => Promise<void>;
+  userData?: User;
+  headerLayout?: boolean;
 };

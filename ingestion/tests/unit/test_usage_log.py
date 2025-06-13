@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,6 +16,7 @@ Usage via query logs tests
 
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
 
 from metadata.generated.schema.metadataIngestion.workflow import (
     OpenMetadataWorkflowConfig,
@@ -77,6 +78,7 @@ def custom_query_compare(self, other):
 
 EXPECTED_QUERIES = [
     TableQuery(
+        dialect="ansi",
         query="select * from sales",
         userName="",
         startTime="",
@@ -88,6 +90,7 @@ EXPECTED_QUERIES = [
         duration=None,
     ),
     TableQuery(
+        dialect="ansi",
         query="select * from marketing",
         userName="",
         startTime="",
@@ -99,7 +102,34 @@ EXPECTED_QUERIES = [
         duration=None,
     ),
     TableQuery(
+        dialect="ansi",
         query="insert into marketing select * from sales",
+        userName="",
+        startTime="",
+        endTime="",
+        aborted=False,
+        serviceName="local_glue",
+        databaseName="default",
+        databaseSchema="information_schema",
+        duration=None,
+    ),
+]
+EXPECTED_QUERIES_FILE_2 = [
+    TableQuery(
+        dialect="ansi",
+        query="select * from product_data",
+        userName="",
+        startTime="",
+        endTime="",
+        aborted=False,
+        serviceName="local_glue",
+        databaseName="default",
+        databaseSchema="information_schema",
+        duration=None,
+    ),
+    TableQuery(
+        dialect="ansi",
+        query="select * from students where marks>=80",
         userName="",
         startTime="",
         endTime="",
@@ -120,14 +150,34 @@ class QueryLogSourceTest(TestCase):
 
     def __init__(self, methodName) -> None:
         super().__init__(methodName)
-        self.config = OpenMetadataWorkflowConfig.parse_obj(mock_query_log_config)
-        self.source = QueryLogUsageSource.create(
-            mock_query_log_config["source"],
-            self.config.workflowConfig.openMetadataServerConfig,
-        )
+        self.config = OpenMetadataWorkflowConfig.model_validate(mock_query_log_config)
+        with patch(
+            "metadata.ingestion.source.database.query.usage.QueryLogUsageSource.test_connection"
+        ):
+            self.source = QueryLogUsageSource.create(
+                mock_query_log_config["source"],
+                self.config.workflowConfig.openMetadataServerConfig,
+            )
 
     def test_queries(self):
         queries = list(self.source.get_table_query())
         TableQuery.__eq__ = custom_query_compare
         for index in range(len(queries[0].queries)):
             assert queries[0].queries[index] == EXPECTED_QUERIES[index]
+
+    def test_multiple_file_queries(self):
+        dir_path = Path(__file__).parent / "resources/log_files"
+        self.source.config.sourceConfig.config.queryLogFilePath = dir_path
+        queries = list(self.source.get_table_query())
+        TableQuery.__eq__ = custom_query_compare
+
+        for single_file_queries in queries:
+            expected_queries_list = EXPECTED_QUERIES
+            if len(single_file_queries.queries) == 2:
+                # if no. of queries in any file = 2 then it should compare with 2nd file which has 2 queries.
+                # we don't know in which order the files are processed
+                expected_queries_list = EXPECTED_QUERIES_FILE_2
+            for index in range(len(single_file_queries.queries)):
+                assert (
+                    single_file_queries.queries[index] == expected_queries_list[index]
+                )

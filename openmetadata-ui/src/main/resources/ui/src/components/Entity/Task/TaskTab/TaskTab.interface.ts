@@ -17,10 +17,13 @@ import { EntityReference } from '../../../../generated/entity/type';
 
 export type TaskTabProps = {
   taskThread: Thread;
-  owner?: EntityReference;
+  owners?: EntityReference[];
   isForFeedTab?: boolean;
+  hasGlossaryReviewer?: boolean;
   onUpdateEntityDetails?: () => void;
   onAfterClose?: () => void;
+  handlePanelResize?: (isFullWidth: boolean) => void;
+  isOpenInDrawer?: boolean;
 } & (
   | TableTaskTabProps
   | { columns?: undefined; entityType: Exclude<EntityType, EntityType.TABLE> }

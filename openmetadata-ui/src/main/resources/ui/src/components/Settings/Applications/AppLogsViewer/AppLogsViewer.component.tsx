@@ -11,6 +11,7 @@
  *  limitations under the License.
  */
 
+import Icon from '@ant-design/icons/lib/components/Icon';
 import {
   Badge,
   Button,
@@ -22,27 +23,24 @@ import {
   Table,
   Typography,
 } from 'antd';
-import { isEmpty, isNil } from 'lodash';
+import { capitalize, isEmpty, isNil } from 'lodash';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LazyLog } from 'react-lazylog';
-import { ReactComponent as IconSuccessBadge } from '../../../../assets/svg/success-badge.svg';
+import { ICON_DIMENSION, STATUS_ICON } from '../../../../constants/constants';
+import { StepStats } from '../../../../generated/entity/applications/appRunRecord';
 import { getEntityStatsData } from '../../../../utils/ApplicationUtils';
 import { formatDateTimeWithTimezone } from '../../../../utils/date-time/DateTimeUtils';
 import { formatJsonString } from '../../../../utils/StringsUtils';
 import AppBadge from '../../../common/Badge/Badge.component';
 import CopyToClipboardButton from '../../../common/CopyToClipboardButton/CopyToClipboardButton';
 import './app-logs-viewer.less';
-import {
-  AppLogsViewerProps,
-  EntityStats,
-  JobStats,
-} from './AppLogsViewer.interface';
+import { AppLogsViewerProps } from './AppLogsViewer.interface';
 
-const AppLogsViewer = ({ data }: AppLogsViewerProps) => {
+const AppLogsViewer = ({ data, scrollHeight }: AppLogsViewerProps) => {
   const { t } = useTranslation();
 
-  const { successContext, failureContext, timestamp } = data;
+  const { successContext, failureContext, timestamp, status } = data;
 
   const handleJumpToEnd = () => {
     const logsBody = document.getElementsByClassName(
@@ -90,7 +88,7 @@ const AppLogsViewer = ({ data }: AppLogsViewerProps) => {
   );
 
   const statsRender = useCallback(
-    (jobStats: JobStats) => (
+    (stepStats: StepStats) => (
       <Card data-testid="stats-component" size="small">
         <Row gutter={[16, 8]}>
           <Col span={24}>
@@ -101,8 +99,11 @@ const AppLogsViewer = ({ data }: AppLogsViewerProps) => {
                 )}:`}</span>
 
                 <Space align="center" className="m-l-xs" size={8}>
-                  <IconSuccessBadge height={14} width={14} />
-                  <span>{t('label.success')}</span>
+                  <Icon
+                    component={STATUS_ICON[status as keyof typeof STATUS_ICON]}
+                    style={ICON_DIMENSION}
+                  />
+                  <span>{capitalize(status)}</span>
                 </Space>
               </div>
               <Divider type="vertical" />
@@ -115,31 +116,31 @@ const AppLogsViewer = ({ data }: AppLogsViewerProps) => {
                     <Badge
                       showZero
                       className="request-badge running"
-                      count={jobStats.totalRecords}
+                      count={stepStats.totalRecords}
                       overflowCount={99999999}
                       title={`${t('label.total-index-sent')}: ${
-                        jobStats.totalRecords
+                        stepStats.totalRecords
                       }`}
                     />
 
                     <Badge
                       showZero
                       className="request-badge success"
-                      count={jobStats.successRecords}
+                      count={stepStats.successRecords}
                       overflowCount={99999999}
                       title={`${t('label.entity-index', {
                         entity: t('label.success'),
-                      })}: ${jobStats.successRecords}`}
+                      })}: ${stepStats.successRecords}`}
                     />
 
                     <Badge
                       showZero
                       className="request-badge failed"
-                      count={jobStats.failedRecords}
+                      count={stepStats.failedRecords}
                       overflowCount={99999999}
                       title={`${t('label.entity-index', {
                         entity: t('label.failed'),
-                      })}: ${jobStats.failedRecords}`}
+                      })}: ${stepStats.failedRecords}`}
                     />
                   </Space>
                 </span>
@@ -237,17 +238,16 @@ const AppLogsViewer = ({ data }: AppLogsViewerProps) => {
   }, [successContext, failureContext]);
 
   const entityStatsRenderer = useCallback(
-    (entityStats: EntityStats) => {
+    (entityStats: { [key: string]: StepStats }) => {
       return (
         <Table
-          bordered
           className="m-t-md"
           columns={tableColumn}
           data-testid="app-entity-stats-history-table"
           dataSource={getEntityStatsData(entityStats)}
           pagination={false}
           rowKey="name"
-          scroll={{ y: 200 }}
+          scroll={scrollHeight ? { y: scrollHeight } : undefined}
           size="small"
         />
       );

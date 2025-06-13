@@ -23,6 +23,7 @@ import {
 import { getDocumentByFQN } from '../../rest/DocStoreAPI';
 import { getActiveAnnouncement } from '../../rest/feedsAPI';
 import MyDataPage from './MyDataPage.component';
+
 const mockLocalStorage = (() => {
   let store: Record<string, string> = {};
 
@@ -38,24 +39,15 @@ const mockLocalStorage = (() => {
     },
   };
 })();
+
 Object.defineProperty(window, 'localStorage', {
   value: mockLocalStorage,
 });
 
-jest.mock(
-  '../../components/ActivityFeed/ActivityFeedProvider/ActivityFeedProvider',
-  () => {
-    return jest
-      .fn()
-      .mockImplementation(({ children }) => (
-        <div data-testid="activity-feed-provider">{children}</div>
-      ));
-  }
-);
 jest.mock('../../components/common/Loader/Loader', () => {
   return jest.fn().mockImplementation(() => <div>Loader</div>);
 });
-jest.mock('../../utils/CustomizePageClassBase', () => {
+jest.mock('../../utils/CustomizeMyDataPageClassBase', () => {
   return mockCustomizePageClassBase;
 });
 jest.mock('../../components/PageLayoutV1/PageLayoutV1', () => {
@@ -76,7 +68,7 @@ jest.mock(
   }
 );
 
-let mockSelectedPersona: Record<string, string> = {
+let mockSelectedPersona: Record<string, string> | null = {
   fullyQualifiedName: mockPersonaName,
 };
 
@@ -106,9 +98,18 @@ jest.mock('../../rest/userAPI', () => ({
     .fn()
     .mockImplementation(() => Promise.resolve(mockUserData)),
 }));
-jest.mock('react-router-dom', () => ({
-  useLocation: jest.fn().mockImplementation(() => ({ pathname: '' })),
-}));
+jest.mock('../../hooks/useCustomLocation/useCustomLocation', () => {
+  return jest.fn().mockImplementation(() => ({ pathname: '' }));
+});
+jest.mock('../../rest/searchAPI', () => {
+  return {
+    searchQuery: jest
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve({ hits: { hits: [], total: { value: 0 } } })
+      ),
+  };
+});
 jest.mock('react-grid-layout', () => ({
   ...jest.requireActual('react-grid-layout'),
   WidthProvider: jest
@@ -124,6 +125,39 @@ jest.mock('react-grid-layout', () => ({
   default: '',
 }));
 
+jest.mock('../../hoc/LimitWrapper', () => {
+  return jest
+    .fn()
+    .mockImplementation(({ children }) => <>LimitWrapper{children}</>);
+});
+
+jest.mock('../DataInsightPage/DataInsightProvider', async () => {
+  return jest.fn().mockImplementation(({ children }) => <>{children}</>);
+});
+
+jest.mock('../../hooks/useWelcomeStore', () => ({
+  useWelcomeStore: jest.fn().mockReturnValue({
+    isWelcomeVisible: true,
+  }),
+}));
+
+jest.mock('../../components/AppRouter/withActivityFeed', () => ({
+  withActivityFeed: jest.fn().mockImplementation((Component) => Component),
+}));
+
+jest.mock('../DataInsightPage/DataInsightProvider', () => {
+  return {
+    __esModule: true,
+    default: jest.fn().mockImplementation(({ children }) => <>{children}</>),
+    useDataInsightProvider: jest.fn().mockReturnValue({
+      kpi: {
+        isLoading: false,
+        data: [],
+      },
+    }),
+  };
+});
+
 describe('MyDataPage component', () => {
   beforeEach(() => {
     localStorage.setItem('loggedInUsers', mockUserData.name);
@@ -137,7 +171,6 @@ describe('MyDataPage component', () => {
     });
 
     expect(screen.getByText('WelcomeScreen')).toBeInTheDocument();
-    expect(screen.queryByTestId('activity-feed-provider')).toBeNull();
   });
 
   it('MyDataPage should display the main content after the WelcomeScreen is closed', async () => {
@@ -149,12 +182,10 @@ describe('MyDataPage component', () => {
     const welcomeScreen = screen.getByText('WelcomeScreen');
 
     expect(welcomeScreen).toBeInTheDocument();
-    expect(screen.queryByTestId('activity-feed-provider')).toBeNull();
 
     await act(async () => userEvent.click(welcomeScreen));
 
     expect(screen.queryByText('WelcomeScreen')).toBeNull();
-    expect(screen.getByTestId('activity-feed-provider')).toBeInTheDocument();
     expect(screen.getByTestId('react-grid-layout')).toBeInTheDocument();
   });
 
@@ -162,11 +193,11 @@ describe('MyDataPage component', () => {
     await act(async () => {
       render(<MyDataPage />);
 
-      expect(screen.queryByText('WelcomeScreen')).toBeNull();
-      expect(screen.queryByTestId('react-grid-layout')).toBeNull();
-      expect(screen.getByTestId('activity-feed-provider')).toBeInTheDocument();
       expect(screen.getByText('Loader')).toBeInTheDocument();
+      expect(screen.queryByTestId('react-grid-layout')).toBeNull();
     });
+
+    expect(screen.queryByText('WelcomeScreen')).toBeNull();
   });
 
   it('MyDataPage should display all the widgets in the config and the announcements widget if there are announcements', async () => {
@@ -231,7 +262,7 @@ describe('MyDataPage component', () => {
   });
 
   it('MyDataPage should render default widgets when there is no selected persona', async () => {
-    mockSelectedPersona = {};
+    mockSelectedPersona = null;
     await act(async () => {
       render(<MyDataPage />);
     });

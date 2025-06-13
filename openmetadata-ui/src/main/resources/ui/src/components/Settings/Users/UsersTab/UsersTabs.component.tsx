@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as IconRemove } from '../../../../assets/svg/ic-remove.svg';
 import { ERROR_PLACEHOLDER_TYPE } from '../../../../enums/common.enum';
+import { TabSpecificField } from '../../../../enums/entity.enum';
 import { User } from '../../../../generated/entity/teams/user';
 import { EntityReference } from '../../../../generated/entity/type';
 import { getUserById } from '../../../../rest/userAPI';
@@ -60,7 +61,9 @@ export const UsersTab = ({ users, onRemoveUser }: UsersTabProps) => {
     try {
       setIsDetailsLoading(true);
       const promises = users.map((user) =>
-        getUserById(user.id, { fields: 'teams,roles' })
+        getUserById(user.id, {
+          fields: [TabSpecificField.TEAMS, TabSpecificField.ROLES],
+        })
       );
 
       const usersDetails = await Promise.allSettled(promises);
@@ -70,7 +73,7 @@ export const UsersTab = ({ users, onRemoveUser }: UsersTabProps) => {
         .map((user) => (user as PromiseFulfilledResult<User>).value);
 
       setAdditionalUsersDetails(filteredUser);
-    } catch (error) {
+    } catch {
       // Error
     } finally {
       setIsDetailsLoading(false);
@@ -117,7 +120,6 @@ export const UsersTab = ({ users, onRemoveUser }: UsersTabProps) => {
   return (
     <>
       <Table
-        bordered
         columns={columns}
         dataSource={
           isDetailsLoading
@@ -131,12 +133,15 @@ export const UsersTab = ({ users, onRemoveUser }: UsersTabProps) => {
               permission
               className="p-y-md"
               heading={t('label.user')}
+              permissionValue={t('label.create-entity', {
+                entity: t('label.user'),
+              })}
               type={ERROR_PLACEHOLDER_TYPE.ASSIGN}
             />
           ),
         }}
         pagination={false}
-        rowKey="fullyQualifiedName"
+        rowKey="name"
         size="small"
       />
       {Boolean(removeUserDetails?.state) && (

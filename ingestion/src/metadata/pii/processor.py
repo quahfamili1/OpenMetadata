@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -12,16 +12,10 @@
 """
 Processor util to fetch pii sensitive columns
 """
-import traceback
-from typing import List, Optional, cast
+from typing import Any, Sequence, TypeVar, Union
 
-from metadata.generated.schema.entity.data.table import Column, TableData
-from metadata.generated.schema.entity.services.ingestionPipelines.status import (
-    StackTraceError,
-)
-from metadata.generated.schema.metadataIngestion.databaseServiceProfilerPipeline import (
-    DatabaseServiceProfilerPipeline,
-)
+from metadata.generated.schema.entity.classification.tag import Tag
+from metadata.generated.schema.entity.data.table import Column
 from metadata.generated.schema.metadataIngestion.workflow import (
     OpenMetadataWorkflowConfig,
 )
@@ -31,24 +25,35 @@ from metadata.generated.schema.type.tagLabel import (
     TagLabel,
     TagSource,
 )
-from metadata.ingestion.api.models import Either
-from metadata.ingestion.api.parser import parse_workflow_config_gracefully
-from metadata.ingestion.api.step import Step
-from metadata.ingestion.api.steps import Processor
-from metadata.ingestion.models.table_metadata import ColumnTag
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
-from metadata.pii.constants import PII
-from metadata.pii.scanners.column_name_scanner import ColumnNameScanner
-from metadata.pii.scanners.ner_scanner import NERScanner
-from metadata.profiler.api.models import ProfilerResponse
+from metadata.pii.algorithms.label_extractors import (
+    LabelExtractor,
+    ProbabilisticLabelExtractor,
+)
+from metadata.pii.algorithms.scoring_ops import scores_group_by
+from metadata.pii.algorithms.tags import (
+    PIICategoryTag,
+    PIIClassificationName,
+    PIISensitivityTag,
+    PIITag,
+)
+from metadata.pii.algorithms.tags_ops import (
+    categorize_pii_tag,
+    get_sensitivity_for_pii_category,
+    resolve_sensitivity,
+)
+from metadata.pii.base_processor import AutoClassificationProcessor
+from metadata.utils import fqn
 from metadata.utils.logger import profiler_logger
+
+T = TypeVar("T")
 
 logger = profiler_logger()
 
 
-class PIIProcessor(Processor):
+class PIIProcessor(AutoClassificationProcessor):
     """
-    A scanner that uses Spacy NER for entity recognition
+    An AutoClassificationProcessor that uses a PIISensitive classifier to tag columns.
     """
 
     def __init__(
@@ -56,135 +61,83 @@ class PIIProcessor(Processor):
         config: OpenMetadataWorkflowConfig,
         metadata: OpenMetadata,
     ):
-        super().__init__()
-        self.config = config
-        self.metadata = metadata
+        super().__init__(config, metadata)
 
-        # Init and type the source config
-        self.source_config: DatabaseServiceProfilerPipeline = cast(
-            DatabaseServiceProfilerPipeline, self.config.source.sourceConfig.config
-        )  # Used to satisfy type checked
-
-        self._ner_scanner = None
-        self.confidence_threshold = self.source_config.confidence
-
-    @property
-    def name(self) -> str:
-        return "PII Processor"
-
-    @property
-    def ner_scanner(self) -> NERScanner:
-        """Load the NER Scanner only if called"""
-        if self._ner_scanner is None:
-            self._ner_scanner = NERScanner()
-
-        return self._ner_scanner
-
-    @classmethod
-    def create(
-        cls,
-        config_dict: dict,
-        metadata: OpenMetadata,
-        pipeline_name: Optional[str] = None,
-    ) -> "Step":
-        config = parse_workflow_config_gracefully(config_dict)
-        return cls(config=config, metadata=metadata)
-
-    def close(self) -> None:
-        """Nothing to close"""
-
-    @staticmethod
-    def build_column_tag(tag_fqn: str, column_fqn: str) -> ColumnTag:
-        """
-        Build the tag and run the PATCH
-        """
-        tag_label = TagLabel(
-            tagFQN=tag_fqn,
-            source=TagSource.Classification,
-            state=State.Suggested,
-            labelType=LabelType.Automated,
+        from metadata.pii.algorithms.column_labelers import (  # pylint: disable=import-outside-toplevel
+            ColumnLabeler,
+            HeuristicPIILabeler,
         )
 
-        return ColumnTag(column_fqn=column_fqn, tag_label=tag_label)
+        prob_threshold = self.source_config.confidence / 100
+        score_threshold = 0.1  # This is the minimum score to consider a tag
 
-    def process_column(
-        self,
-        idx: int,
-        column: Column,
-        table_data: Optional[TableData],
-        confidence_threshold: float,
-    ) -> Optional[List[ColumnTag]]:
-        """
-        Tag a column with PII if we find it using our scanners
-        """
-
-        # First, check if the column we are about to process
-        # already has PII tags or not
-        column_has_pii_tag = any(
-            (PII in tag.tagFQN.__root__ for tag in column.tags or [])
+        self._pii_category_extractor: LabelExtractor[
+            PIICategoryTag
+        ] = ProbabilisticLabelExtractor(
+            score_threshold=score_threshold,
+            prob_threshold=prob_threshold,
+            k=1,  # k=1 means we return only the top category
         )
 
-        # If it has PII tags, we skip the processing
-        # for the column
-        if column_has_pii_tag is True:
-            return None
+        self._pii_labeler: ColumnLabeler[PIITag] = HeuristicPIILabeler()
 
-        # Scan by column name. If no results there, check the sample data, if any
-        tag_and_confidence = ColumnNameScanner.scan(column.name.__root__) or (
-            self.ner_scanner.scan([row[idx] for row in table_data.rows])
-            if table_data
-            else None
+    def create_column_tag_labels(
+        self, column: Column, sample_data: Sequence[Any]
+    ) -> Sequence[TagLabel]:
+        """
+        Create tags for the column based on the sample data.
+        """
+        # If the column we are about to process already has PII tags return empty
+        for tag in column.tags or []:
+            if PIIClassificationName.PII.value in tag.tagFQN.root:
+                return []
+
+        pii_tag_scores = self._pii_labeler.predict_scores(
+            sample_data, column_name=column.name.root, column_data_type=column.dataType
         )
 
-        if (
-            tag_and_confidence
-            and tag_and_confidence.tag_fqn
-            and tag_and_confidence.confidence >= confidence_threshold / 100
-        ):
-            # We support returning +1 tags for a single column in _run
-            return [
-                self.build_column_tag(
-                    tag_fqn=tag_and_confidence.tag_fqn,
-                    column_fqn=column.fullyQualifiedName.__root__,
-                )
-            ]
+        pii_category_scores = scores_group_by(pii_tag_scores, categorize_pii_tag)
 
-        return None
+        # We allow more than one category to be assigned, this might be useful
+        # for documents that contain multiple PII types.
+        # Whether, we want to return one or multiple labels is controlled
+        # by the LabelExtractor; to modify this behavior, please change the
+        # LabelExtractor used, and not the implementation of this method.
 
-    def _run(
-        self,
-        record: ProfilerResponse,
-    ) -> Either[ProfilerResponse]:
-        """
-        Main entrypoint for the scanner.
+        pii_categories = self._pii_category_extractor.extract_labels(
+            pii_category_scores
+        )
 
-        Adds PII tagging based on the column names
-        and TableData
-        """
+        tag_labels = [get_tag_label(pii_category) for pii_category in pii_categories]
 
-        # We don't always need to process
-        if not self.source_config.processPiiSensitive:
-            return Either(right=record)
+        # Determine the sensitivity of the PII categories, if any
+        pii_sensitivity = resolve_sensitivity(
+            {get_sensitivity_for_pii_category(pc) for pc in pii_categories}
+        )
 
-        column_tags = []
-        for idx, column in enumerate(record.table.columns):
-            try:
-                col_tags = self.process_column(
-                    idx=idx,
-                    column=column,
-                    table_data=record.sample_data,
-                    confidence_threshold=self.confidence_threshold,
-                )
-                if col_tags:
-                    column_tags.extend(col_tags)
-            except Exception as err:
-                self.status.failed(
-                    StackTraceError(
-                        name=record.table.fullyQualifiedName.__root__,
-                        error=f"Error computing PII tags for [{column}] - [{err}]",
-                        stackTrace=traceback.format_exc(),
-                    )
-                )
+        if pii_sensitivity:
+            tag_labels.append(get_tag_label(pii_sensitivity))
 
-        record.column_tags = column_tags
-        return Either(right=record)
+        return tag_labels
+
+
+def get_tag_label(tag: Union[PIICategoryTag, PIISensitivityTag]) -> TagLabel:
+
+    fqn_str = fqn.build(
+        None,
+        entity_type=Tag,
+        classification_name=tag.pii_classification_name().value,
+        tag_name=tag.value,
+    )
+
+    if fqn_str is None:
+        # This should be prevented by unit tests, but in case it happens,
+        # we prefer to fail noisily rather than silently returning None.
+        raise ValueError(f"Failed to build FQN for tag: {tag}")
+
+    return TagLabel(
+        tagFQN=fqn_str,
+        source=TagSource.Classification,
+        state=State.Suggested,
+        labelType=LabelType.Generated,
+    )

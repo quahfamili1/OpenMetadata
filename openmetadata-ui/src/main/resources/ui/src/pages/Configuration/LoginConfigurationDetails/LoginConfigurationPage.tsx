@@ -88,8 +88,8 @@ const LoginConfigurationPage = () => {
   }
 
   return (
-    <PageLayoutV1 pageTitle={t('label.login')}>
-      <Row className="page-container" gutter={[0, 16]}>
+    <PageLayoutV1 pageTitle={t('label.login-configuration')}>
+      <Row className="p-lg bg-white border-radius-sm" gutter={[0, 16]}>
         <Col span={24}>
           <TitleBreadcrumb titleLinks={breadcrumbs} />
         </Col>
@@ -176,7 +176,7 @@ const LoginConfigurationPage = () => {
             <Col span={24}>
               <Typography.Text data-testid="jwt-token-expiry-time">
                 {loginConfig?.jwtTokenExpiryTime ?? NO_DATA_PLACEHOLDER}{' '}
-                {t('label.seconds')}
+                {t('label.second-plural')}
               </Typography.Text>
             </Col>
           </Row>

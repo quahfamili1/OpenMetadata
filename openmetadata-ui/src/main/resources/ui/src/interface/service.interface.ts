@@ -11,12 +11,14 @@
  *  limitations under the License.
  */
 
+import { ServicesUpdateRequest } from 'Models';
 import { FormSubmitType } from '../enums/form.enum';
 import { ServiceCategory } from '../enums/service.enum';
 import {
   Pipeline,
   PipelineType,
 } from '../generated/api/services/ingestionPipelines/createIngestionPipeline';
+import { APIService } from '../generated/entity/services/apiService';
 import {
   DashboardConnection,
   DashboardService,
@@ -82,11 +84,6 @@ export interface DataObj {
   sourceUrl?: string;
 }
 
-export interface EditObj {
-  edit: boolean;
-  id?: string;
-}
-
 export type DomainSupportedServiceTypes =
   | DatabaseService
   | MessagingService
@@ -103,7 +100,8 @@ export type ServicesType =
   | MlmodelService
   | MetadataService
   | StorageService
-  | SearchService;
+  | SearchService
+  | APIService;
 
 export interface ServiceResponse {
   data: Array<ServicesType>;
@@ -124,6 +122,7 @@ export type IngestionWorkflowData = Pipeline & {
   name: string;
   enableDebugLog?: boolean;
   displayName?: string;
+  raiseOnError?: boolean;
 };
 
 export interface IngestionWorkflowFormProps {
@@ -138,4 +137,15 @@ export interface IngestionWorkflowFormProps {
   onFocus: (fieldId: string) => void;
   onSubmit: (data: IngestionWorkflowData) => void;
   onChange?: (data: IngestionWorkflowData) => void;
+  serviceData?: ServicesUpdateRequest;
 }
+
+export type ExtraInfoType = {
+  name: string;
+  displayName?: string;
+  description?: string;
+  href?: string;
+  location?: string;
+  type?: string;
+  headerKey?: string;
+};

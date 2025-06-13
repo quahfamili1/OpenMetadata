@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -64,7 +64,9 @@ def check_if_should_quote_column_name(table_service_type) -> Optional[bool]:
     return None
 
 
-def build_orm_col(idx: int, col: Column, table_service_type) -> sqlalchemy.Column:
+def build_orm_col(
+    idx: int, col: Column, table_service_type, *, _quote=None
+) -> sqlalchemy.Column:
     """
     Cook the ORM column from our metadata instance
     information.
@@ -76,16 +78,22 @@ def build_orm_col(idx: int, col: Column, table_service_type) -> sqlalchemy.Colum
     As this is only used for INSERT/UPDATE/DELETE,
     there is no impact for our read-only purposes.
     """
+    if _quote is not None:
+        quote = _quote
+    else:
+        quote = check_if_should_quote_column_name(
+            table_service_type
+        ) or check_snowflake_case_sensitive(table_service_type, col.name.root)
+
     return sqlalchemy.Column(
-        name=str(col.name.__root__),
+        name=str(col.name.root),
         type_=converter_registry[table_service_type]().map_types(
             col, table_service_type
         ),
         primary_key=not bool(idx),  # The first col seen is used as PK
-        quote=check_if_should_quote_column_name(table_service_type)
-        or check_snowflake_case_sensitive(table_service_type, col.name.__root__),
+        quote=quote,
         key=str(
-            col.name.__root__
+            col.name.root
         ).lower(),  # Add lowercase column name as key for snowflake case sensitive columns
     )
 
@@ -101,49 +109,59 @@ def ometa_to_sqa_orm(
     We are building the class dynamically using
     `type` and passing SQLAlchemy `Base` class
     as the bases tuple for inheritance.
+
+    Args:
+        table (Table): OpenMetadata Table instance
+        metadata (OpenMetadata): OpenMetadata connection
+        sqa_metadata_obj (MetaData): For advanced use cases, you can pass a custom MetaData object. For most cases, this
+        can be left as None so that the global_metadata object is used.
     """
+    _metadata = sqa_metadata_obj or Base.metadata
     table.serviceType = cast(
         databaseService.DatabaseServiceType, table.serviceType
     )  # satisfy mypy
+
+    orm_database_name = get_orm_database(table, metadata)
+    # SQLite does not support schemas
+    orm_schema_name = (
+        get_orm_schema(table, metadata)
+        if table.serviceType != databaseService.DatabaseServiceType.SQLite
+        else None
+    )
+    orm_name = f"{orm_database_name}_{orm_schema_name}_{table.name.root}".replace(
+        ".", "_"
+    )
+
     cols = {
         (
-            col.name.__root__ + "_"
-            if col.name.__root__ in SQA_RESERVED_ATTRIBUTES
-            else col.name.__root__
+            col.name.root + "_"
+            if col.name.root in SQA_RESERVED_ATTRIBUTES
+            else col.name.root
         ): build_orm_col(idx, col, table.serviceType)
         for idx, col in enumerate(table.columns)
     }
-
-    orm_database_name = get_orm_database(table, metadata)
-    orm_schema_name = get_orm_schema(table, metadata)
-    orm_name = f"{orm_database_name}_{orm_schema_name}_{table.name.__root__}".replace(
-        ".", "_"
-    )
 
     # Type takes positional arguments in the form of (name, bases, dict)
     orm = type(
         orm_name,  # Output class name
         (Base,),  # SQLAlchemy declarative base
         {
-            "__tablename__": str(table.name.__root__),
+            "__tablename__": str(table.name.root),
             "__table_args__": {
-                # SQLite does not support schemas
-                "schema": orm_schema_name
-                if table.serviceType != databaseService.DatabaseServiceType.SQLite
-                else None,
+                "schema": orm_schema_name,
                 "extend_existing": True,  # Recreates the table ORM object if it already exists. Useful for testing
                 "quote": check_snowflake_case_sensitive(
-                    table.serviceType, table.name.__root__
-                ),
+                    table.serviceType, table.name.root
+                )
+                or None,
             },
             **cols,
-            "metadata": sqa_metadata_obj or Base.metadata,
+            "metadata": _metadata,
         },
     )
 
     if not isinstance(orm, DeclarativeMeta):
         raise ValueError("OMeta to ORM did not create a DeclarativeMeta")
-
     return orm
 
 
@@ -166,7 +184,7 @@ def get_orm_schema(table: Table, metadata: OpenMetadata) -> str:
         entity=DatabaseSchema, entity_id=table.databaseSchema.id
     )
 
-    return str(schema.name.__root__)
+    return str(schema.name.root)
 
 
 def get_orm_database(table: Table, metadata: OpenMetadata) -> str:
@@ -184,4 +202,4 @@ def get_orm_database(table: Table, metadata: OpenMetadata) -> str:
         entity=Database, entity_id=table.database.id
     )
 
-    return str(database.name.__root__)
+    return str(database.name.root)

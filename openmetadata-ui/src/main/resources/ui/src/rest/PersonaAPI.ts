@@ -12,8 +12,9 @@
  */
 import { AxiosResponse } from 'axios';
 import { Operation } from 'fast-json-patch';
-import { PagingResponse, RestoreRequestType } from 'Models';
+import { PagingResponse } from 'Models';
 import axiosClient from '.';
+import { TabSpecificField } from '../enums/entity.enum';
 import { CreatePersona } from '../generated/api/teams/createPersona';
 import { Persona } from '../generated/entity/teams/persona';
 import { getEncodedFqn } from '../utils/StringsUtils';
@@ -35,12 +36,12 @@ export const getAllPersonas = async (params: GetPersonasParams) => {
   return response.data;
 };
 
-export const getPersonaByName = async (fqn: string) => {
+export const getPersonaByName = async (fqn: string, fields?: string) => {
   const response = await axiosClient.get<Persona>(
     `${BASE_URL}/name/${getEncodedFqn(fqn)}`,
     {
       params: {
-        fields: 'users',
+        fields: fields ?? TabSpecificField.USERS,
       },
     }
   );
@@ -62,15 +63,6 @@ export const updatePersona = async (id: string, data: Operation[]) => {
     `${BASE_URL}/${id}`,
     data
   );
-
-  return response.data;
-};
-
-export const restorePersona = async (id: string) => {
-  const response = await axiosClient.put<
-    RestoreRequestType,
-    AxiosResponse<Persona>
-  >(`${BASE_URL}/restore`, { id });
 
   return response.data;
 };

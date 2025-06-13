@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -63,12 +63,12 @@ MOCK_DATABASE_SCHEMA = DatabaseSchema(
     ),
 )
 
-EXPTECTED_DATABASE_SCHEMA = [
+EXPECTED_DATABASE_SCHEMA = [
     CreateDatabaseSchemaRequest(
         name="do_it_all_with_default_schema",
         displayName=None,
         description=None,
-        owner=None,
+        owners=None,
         database="domodashboard_source_test.do_it_all_with_default_config",
     )
 ]
@@ -94,14 +94,7 @@ mock_domodatabase_config = {
         "openMetadataServerConfig": {
             "hostPort": "http://localhost:8585/api",
             "authProvider": "openmetadata",
-            "securityConfig": {
-                "jwtToken": "eyJraWQiOiJHYjM4OWEtOWY3Ni1nZGpzLWE5MmotMDI0MmJrOTQzNTYiLCJ0eXAiOiJKV1QiLCJhbGc"
-                "iOiJSUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImlzQm90IjpmYWxzZSwiaXNzIjoib3Blbi1tZXRhZGF0YS5vcmciLCJpYXQiOjE"
-                "2NjM5Mzg0NjIsImVtYWlsIjoiYWRtaW5Ab3Blbm1ldGFkYXRhLm9yZyJ9.tS8um_5DKu7HgzGBzS1VTA5uUjKWOCU0B_j08WXB"
-                "iEC0mr0zNREkqVfwFDD-d24HlNEbrqioLsBuFRiwIWKc1m_ZlVQbG7P36RUxhuv2vbSp80FKyNM-Tj93FDzq91jsyNmsQhyNv_fN"
-                "r3TXfzzSPjHt8Go0FMMP66weoKMgW2PbXlhVKwEuXUHyakLLzewm9UMeQaEiRzhiTMU3UkLXcKbYEJJvfNFcLwSl9W8JCO_l0Yj3u"
-                "d-qt_nQYEZwqW6u5nfdQllN133iikV4fM5QZsMCnm8Rq1mvLR0y9bmJiD7fwM1tmJ791TUWqmKaTnP49U493VanKpUAfzIiOiIbhg"
-            },
+            "securityConfig": {"jwtToken": "domodatabase"},
         }
     },
 }
@@ -227,7 +220,7 @@ EXPTECTED_TABLE = [
         tableConstraints=None,
         tablePartition=None,
         tableProfilerConfig=None,
-        owner=None,
+        owners=None,
         databaseSchema="domodashboard_source_test.do_it_all_with_default_config.do_it_all_with_default_schema",
         tags=None,
         schemaDefinition=None,
@@ -254,25 +247,25 @@ class DomoDatabaseUnitTest(TestCase):
     ) -> None:
         super().__init__(methodName)
         test_connection.return_value = False
-        self.config = OpenMetadataWorkflowConfig.parse_obj(mock_domodatabase_config)
+        self.config = OpenMetadataWorkflowConfig.model_validate(
+            mock_domodatabase_config
+        )
         self.domodatabase = DomodatabaseSource.create(
             mock_domodatabase_config["source"],
             self.config.workflowConfig.openMetadataServerConfig,
         )
-        self.domodatabase.context.get().__dict__[
-            "database"
-        ] = MOCK_DATABASE.name.__root__
+        self.domodatabase.context.get().__dict__["database"] = MOCK_DATABASE.name.root
         self.domodatabase.context.get().__dict__[
             "database_service"
-        ] = MOCK_DATABASE_SERVICE.name.__root__
+        ] = MOCK_DATABASE_SERVICE.name.root
         self.domodatabase.context.get().__dict__[
             "database_schema"
-        ] = MOCK_DATABASE_SCHEMA.name.__root__
+        ] = MOCK_DATABASE_SCHEMA.name.root
 
     def test_yield_schema(self):
         schema_list = []
         yield_schemas = self.domodatabase.yield_database_schema(
-            schema_name=MOCK_DATABASE_SCHEMA.name
+            schema_name=MOCK_DATABASE_SCHEMA.name.root
         )
 
         for schema in yield_schemas:
@@ -280,7 +273,7 @@ class DomoDatabaseUnitTest(TestCase):
                 schema_list.append(schema)
 
         for _, (exptected, original) in enumerate(
-            zip(EXPTECTED_DATABASE_SCHEMA, schema_list)
+            zip(EXPECTED_DATABASE_SCHEMA, schema_list)
         ):
             self.assertEqual(exptected, original)
 

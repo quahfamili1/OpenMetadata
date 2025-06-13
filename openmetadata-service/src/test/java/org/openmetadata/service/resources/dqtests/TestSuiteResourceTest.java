@@ -1,11 +1,13 @@
 package org.openmetadata.service.resources.dqtests;
 
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.NOT_FOUND;
-import static org.assertj.core.api.Assertions.assertThat;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.openmetadata.schema.api.teams.CreateTeam.TeamType.GROUP;
 import static org.openmetadata.service.util.TestUtils.ADMIN_AUTH_HEADERS;
 import static org.openmetadata.service.util.TestUtils.LONG_ENTITY_NAME;
 import static org.openmetadata.service.util.TestUtils.assertListNotNull;
@@ -13,32 +15,41 @@ import static org.openmetadata.service.util.TestUtils.assertListNull;
 import static org.openmetadata.service.util.TestUtils.assertResponse;
 import static org.openmetadata.service.util.TestUtils.assertResponseContains;
 
-import es.org.elasticsearch.search.aggregations.AggregationBuilder;
-import es.org.elasticsearch.search.aggregations.AggregationBuilders;
+import es.org.elasticsearch.client.Request;
+import es.org.elasticsearch.client.RestClient;
+import jakarta.ws.rs.client.WebTarget;
+import jakarta.ws.rs.core.Response;
 import java.io.IOException;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import javax.json.JsonObject;
-import javax.ws.rs.client.WebTarget;
-import javax.ws.rs.core.Response;
 import org.apache.http.client.HttpResponseException;
+import org.apache.http.util.EntityUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.openmetadata.schema.api.data.CreateTable;
+import org.openmetadata.schema.api.services.ingestionPipelines.CreateIngestionPipeline;
+import org.openmetadata.schema.api.teams.CreateTeam;
+import org.openmetadata.schema.api.teams.CreateUser;
 import org.openmetadata.schema.api.tests.CreateLogicalTestCases;
 import org.openmetadata.schema.api.tests.CreateTestCase;
+import org.openmetadata.schema.api.tests.CreateTestCaseResult;
 import org.openmetadata.schema.api.tests.CreateTestSuite;
 import org.openmetadata.schema.entity.data.Table;
+import org.openmetadata.schema.entity.services.ingestionPipelines.IngestionPipeline;
+import org.openmetadata.schema.entity.teams.Team;
+import org.openmetadata.schema.entity.teams.User;
+import org.openmetadata.schema.metadataIngestion.SourceConfig;
+import org.openmetadata.schema.metadataIngestion.TestSuitePipeline;
 import org.openmetadata.schema.tests.TestCase;
 import org.openmetadata.schema.tests.TestSuite;
-import org.openmetadata.schema.tests.type.TestCaseResult;
 import org.openmetadata.schema.tests.type.TestCaseStatus;
 import org.openmetadata.schema.tests.type.TestSummary;
 import org.openmetadata.schema.type.Column;
@@ -48,7 +59,11 @@ import org.openmetadata.schema.type.Include;
 import org.openmetadata.service.Entity;
 import org.openmetadata.service.resources.EntityResourceTest;
 import org.openmetadata.service.resources.databases.TableResourceTest;
-import org.openmetadata.service.search.elasticsearch.ElasticSearchClient;
+import org.openmetadata.service.resources.feeds.MessageParser;
+import org.openmetadata.service.resources.services.ingestionpipelines.IngestionPipelineResourceTest;
+import org.openmetadata.service.resources.teams.TeamResourceTest;
+import org.openmetadata.service.resources.teams.UserResourceTest;
+import org.openmetadata.service.search.models.IndexMapping;
 import org.openmetadata.service.util.JsonUtils;
 import org.openmetadata.service.util.ResultList;
 import org.openmetadata.service.util.TestUtils;
@@ -77,7 +92,7 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
         tableResourceTest
             .createRequest(test)
             .withName(TEST_SUITE_TABLE_NAME1)
-            .withOwner(USER1_REF)
+            .withOwners(List.of(USER1_REF))
             .withColumns(
                 List.of(
                     new Column()
@@ -85,14 +100,14 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
                         .withDisplayName("c1")
                         .withDataType(ColumnDataType.VARCHAR)
                         .withDataLength(10)))
-            .withOwner(USER1_REF);
+            .withOwners(List.of(USER1_REF));
     TEST_SUITE_TABLE1 = tableResourceTest.createAndCheckEntity(tableReq, ADMIN_AUTH_HEADERS);
     tableReq =
         tableResourceTest
             .createRequest(test)
             .withName(TEST_SUITE_TABLE_NAME2)
             .withDatabaseSchema(DATABASE_SCHEMA.getFullyQualifiedName())
-            .withOwner(USER1_REF)
+            .withOwners(List.of(USER1_REF))
             .withColumns(
                 List.of(
                     new Column()
@@ -100,14 +115,14 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
                         .withDisplayName("c1")
                         .withDataType(ColumnDataType.VARCHAR)
                         .withDataLength(10)))
-            .withOwner(USER1_REF);
+            .withOwners(List.of(USER1_REF));
     TEST_SUITE_TABLE2 = tableResourceTest.createAndCheckEntity(tableReq, ADMIN_AUTH_HEADERS);
     CREATE_TEST_SUITE1 =
         createRequest(DATABASE_SCHEMA.getFullyQualifiedName() + "." + TEST_SUITE_TABLE_NAME1);
-    TEST_SUITE1 = createExecutableTestSuite(CREATE_TEST_SUITE1, ADMIN_AUTH_HEADERS);
+    TEST_SUITE1 = createBasicTestSuite(CREATE_TEST_SUITE1, ADMIN_AUTH_HEADERS);
     CREATE_TEST_SUITE2 =
         createRequest(DATABASE_SCHEMA.getFullyQualifiedName() + "." + TEST_SUITE_TABLE_NAME2);
-    TEST_SUITE2 = createExecutableTestSuite(CREATE_TEST_SUITE2, ADMIN_AUTH_HEADERS);
+    TEST_SUITE2 = createBasicTestSuite(CREATE_TEST_SUITE2, ADMIN_AUTH_HEADERS);
   }
 
   @Test
@@ -116,39 +131,33 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
     assertResponse(
         () -> createEntity(createRequest(test).withName(null), ADMIN_AUTH_HEADERS),
         BAD_REQUEST,
-        "[name must not be null]");
+        "[query param name must not be null]");
   }
 
   @Test
   void put_testCaseResults_200() throws IOException, ParseException {
     TestCaseResourceTest testCaseResourceTest = new TestCaseResourceTest();
     List<EntityReference> testCases1 = new ArrayList<>();
-    TestCaseResult testCaseResult =
-        new TestCaseResult()
+    CreateTestCaseResult createTestCaseResult =
+        new CreateTestCaseResult()
             .withResult("tested")
             .withTestCaseStatus(TestCaseStatus.Success)
             .withTimestamp(TestUtils.dateToTimestamp("2021-09-09"));
 
     for (int i = 0; i < 5; i++) {
-      CreateTestCase createTestCase =
-          testCaseResourceTest
-              .createRequest("test_testSuite_" + i)
-              .withTestSuite(TEST_SUITE1.getFullyQualifiedName());
+      CreateTestCase createTestCase = testCaseResourceTest.createRequest("test_testSuite_" + i);
       TestCase testCase =
           testCaseResourceTest.createAndCheckEntity(createTestCase, ADMIN_AUTH_HEADERS);
       testCases1.add(testCase.getEntityReference());
-      testCaseResourceTest.putTestCaseResult(
-          testCase.getFullyQualifiedName(), testCaseResult, ADMIN_AUTH_HEADERS);
+      testCaseResourceTest.postTestCaseResult(
+          testCase.getFullyQualifiedName(), createTestCaseResult, ADMIN_AUTH_HEADERS);
     }
 
     for (int i = 5; i < 10; i++) {
-      CreateTestCase create =
-          testCaseResourceTest
-              .createRequest("test_testSuite_2_" + i)
-              .withTestSuite(TEST_SUITE2.getFullyQualifiedName());
+      CreateTestCase create = testCaseResourceTest.createRequest("test_testSuite_2_" + i);
       TestCase testCase = testCaseResourceTest.createAndCheckEntity(create, ADMIN_AUTH_HEADERS);
-      testCaseResourceTest.putTestCaseResult(
-          testCase.getFullyQualifiedName(), testCaseResult, ADMIN_AUTH_HEADERS);
+      testCaseResourceTest.postTestCaseResult(
+          testCase.getFullyQualifiedName(), createTestCaseResult, ADMIN_AUTH_HEADERS);
     }
 
     ResultList<TestSuite> actualTestSuites =
@@ -160,7 +169,7 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
         verifyTestCases(testSuite.getTests(), testCases1);
       }
     }
-    deleteExecutableTestSuite(TEST_SUITE1.getId(), true, false, ADMIN_AUTH_HEADERS);
+    deleteBasicTestSuite(TEST_SUITE1.getId(), true, false, ADMIN_AUTH_HEADERS);
     assertResponse(
         () -> getEntity(TEST_SUITE1.getId(), ADMIN_AUTH_HEADERS),
         NOT_FOUND,
@@ -174,7 +183,16 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
   }
 
   @Test
-  void list_testSuitesIncludeEmpty_200(TestInfo test) throws IOException, ParseException {
+  void create_basicTestSuiteWithoutRef(TestInfo test) {
+    CreateTestSuite createTestSuite = createRequest(test);
+    assertResponse(
+        () -> createBasicEmptySuite(createTestSuite, ADMIN_AUTH_HEADERS),
+        BAD_REQUEST,
+        "Cannot create a basic test suite without the BasicEntityReference field informed.");
+  }
+
+  @Test
+  void list_testSuitesIncludeEmpty_200(TestInfo test) throws IOException {
     List<CreateTestSuite> testSuites = new ArrayList<>();
     TestCaseResourceTest testCaseResourceTest = new TestCaseResourceTest();
     TableResourceTest tableResourceTest = new TableResourceTest();
@@ -191,12 +209,10 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
                           .withDataLength(10)));
       Table table = tableResourceTest.createEntity(tableReq, ADMIN_AUTH_HEADERS);
       CreateTestSuite createTestSuite = createRequest(table.getFullyQualifiedName());
-      TestSuite testSuite = createExecutableTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
+      TestSuite testSuite = createBasicTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
       for (int j = 0; j < 3; j++) {
         CreateTestCase createTestCase =
-            testCaseResourceTest
-                .createRequest("test_" + RandomStringUtils.randomAlphabetic(10))
-                .withTestSuite(testSuite.getFullyQualifiedName());
+            testCaseResourceTest.createRequest("test_" + RandomStringUtils.randomAlphabetic(10));
         testCaseResourceTest.createAndCheckEntity(createTestCase, ADMIN_AUTH_HEADERS);
       }
       testSuites.add(createTestSuite);
@@ -215,7 +231,7 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
                         .withDataLength(10)));
     Table table = tableResourceTest.createEntity(tableReq, ADMIN_AUTH_HEADERS);
     CreateTestSuite createTestSuite = createRequest(table.getFullyQualifiedName());
-    createExecutableTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
+    createBasicTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
     testSuites.add(createTestSuite);
 
     ResultList<TestSuite> actualTestSuites =
@@ -262,25 +278,68 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
                         .withDisplayName("c1")
                         .withDataType(ColumnDataType.VARCHAR)
                         .withDataLength(10)))
-            .withOwner(USER1_REF);
+            .withOwners(List.of(USER1_REF));
     Table table = tableResourceTest.createEntity(tableReq, ADMIN_AUTH_HEADERS);
     table = tableResourceTest.getEntity(table.getId(), "*", ADMIN_AUTH_HEADERS);
     CreateTestSuite createExecutableTestSuite = createRequest(table.getFullyQualifiedName());
     TestSuite executableTestSuite =
-        createExecutableTestSuite(createExecutableTestSuite, ADMIN_AUTH_HEADERS);
+        createBasicTestSuite(createExecutableTestSuite, ADMIN_AUTH_HEADERS);
     TestSuite testSuite = getEntity(executableTestSuite.getId(), "*", ADMIN_AUTH_HEADERS);
-    assertEquals(testSuite.getOwner().getId(), table.getOwner().getId());
+    assertOwners(testSuite.getOwners(), table.getOwners());
     Table updateTableOwner = table;
-    updateTableOwner.setOwner(TEAM11_REF);
+    updateTableOwner.setOwners(List.of(TEAM11_REF));
     tableResourceTest.patchEntity(
         table.getId(), JsonUtils.pojoToJson(table), updateTableOwner, ADMIN_AUTH_HEADERS);
     table = tableResourceTest.getEntity(table.getId(), "*", ADMIN_AUTH_HEADERS);
     testSuite = getEntity(executableTestSuite.getId(), "*", ADMIN_AUTH_HEADERS);
-    assertEquals(table.getOwner().getId(), testSuite.getOwner().getId());
+    assertOwners(table.getOwners(), testSuite.getOwners());
+  }
+
+  @Test
+  void test_inheritDomainFromTable(TestInfo test) throws IOException {
+    TableResourceTest tableResourceTest = new TableResourceTest();
+    CreateTable tableReq =
+        tableResourceTest
+            .createRequest(test)
+            .withColumns(
+                List.of(
+                    new Column()
+                        .withName(C1)
+                        .withDisplayName("c1")
+                        .withDataType(ColumnDataType.VARCHAR)
+                        .withDataLength(10)))
+            .withDomain(DOMAIN1.getFullyQualifiedName());
+    Table table = tableResourceTest.createEntity(tableReq, ADMIN_AUTH_HEADERS);
+    table = tableResourceTest.getEntity(table.getId(), "*", ADMIN_AUTH_HEADERS);
+    CreateTestSuite createExecutableTestSuite = createRequest(table.getFullyQualifiedName());
+    TestSuite executableTestSuite =
+        createBasicTestSuite(createExecutableTestSuite, ADMIN_AUTH_HEADERS);
+    TestSuite testSuite = getEntity(executableTestSuite.getId(), "domain", ADMIN_AUTH_HEADERS);
+    assertEquals(DOMAIN1.getId(), testSuite.getDomain().getId());
+    ResultList<TestSuite> testSuites =
+        listEntitiesFromSearch(
+            Map.of("domain", DOMAIN1.getFullyQualifiedName(), "fields", "domain"),
+            100,
+            0,
+            ADMIN_AUTH_HEADERS);
+    assertTrue(
+        testSuites.getData().stream()
+            .allMatch(ts -> ts.getDomain().getId().equals(DOMAIN1.getId())));
   }
 
   @Test
   void post_createLogicalTestSuiteAndAddTests_200(TestInfo test) throws IOException {
+
+    UserResourceTest userResourceTest = new UserResourceTest();
+    CreateUser createUser1 =
+        userResourceTest.createRequest(test).withRoles(List.of(DATA_CONSUMER_ROLE.getId()));
+    User user1 = userResourceTest.createEntity(createUser1, ADMIN_AUTH_HEADERS);
+    EntityReference user1Ref = user1.getEntityReference();
+    TeamResourceTest teamResourceTest = new TeamResourceTest();
+    CreateTeam createTeam = teamResourceTest.createRequest(test, 1).withTeamType(GROUP);
+    Team team = teamResourceTest.createEntity(createTeam, ADMIN_AUTH_HEADERS);
+    EntityReference teamRef = team.getEntityReference();
+
     TestCaseResourceTest testCaseResourceTest = new TestCaseResourceTest();
     TableResourceTest tableResourceTest = new TableResourceTest();
     CreateTable tableReq =
@@ -295,17 +354,17 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
                         .withDataLength(10)));
     Table table = tableResourceTest.createEntity(tableReq, ADMIN_AUTH_HEADERS);
     CreateTestSuite createExecutableTestSuite = createRequest(table.getFullyQualifiedName());
-    createExecutableTestSuite.withOwner(USER1_REF);
+    createExecutableTestSuite.withOwners(List.of(user1Ref));
     TestSuite executableTestSuite =
-        createExecutableTestSuite(createExecutableTestSuite, ADMIN_AUTH_HEADERS);
+        createBasicTestSuite(createExecutableTestSuite, ADMIN_AUTH_HEADERS);
     List<EntityReference> testCases1 = new ArrayList<>();
 
     // We'll create tests cases for testSuite1
     for (int i = 0; i < 5; i++) {
       CreateTestCase createTestCase =
-          testCaseResourceTest
-              .createRequest(String.format("test_testSuite_2_%s_", test.getDisplayName()) + i)
-              .withTestSuite(executableTestSuite.getFullyQualifiedName());
+          testCaseResourceTest.createRequest(
+              String.format("test_testSuite_2_%s_", test.getDisplayName()) + i,
+              new MessageParser.EntityLink(Entity.TABLE, table.getFullyQualifiedName()));
       TestCase testCase =
           testCaseResourceTest.createAndCheckEntity(createTestCase, ADMIN_AUTH_HEADERS);
       testCases1.add(testCase.getEntityReference());
@@ -313,7 +372,7 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
 
     // We'll create a logical test suite and associate the test cases to it
     CreateTestSuite createTestSuite = createRequest(test);
-    createTestSuite.withOwner(TEAM11_REF);
+    createTestSuite.withOwners(List.of(teamRef));
     TestSuite testSuite = createEntity(createTestSuite, ADMIN_AUTH_HEADERS);
     addTestCasesToLogicalTestSuite(
         testSuite, testCases1.stream().map(EntityReference::getId).collect(Collectors.toList()));
@@ -347,7 +406,7 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
         allEntities.getData().stream()
             .anyMatch(ts -> ts.getId().equals(finalExecutableTestSuite.getId())));
     // 2. List only executable test suites
-    queryParams.put("testSuiteType", "executable");
+    queryParams.put("testSuiteType", "basic");
     queryParams.put("fields", "tests");
     ResultList<TestSuite> executableTestSuites =
         listEntitiesFromSearch(queryParams, 100, 0, ADMIN_AUTH_HEADERS);
@@ -372,13 +431,26 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
         nonEmptyTestSuites.getData().stream().anyMatch(ts -> !ts.getTests().isEmpty()));
     // 5. List test suite with a query
     queryParams.clear();
-    queryParams.put("q", logicalTestSuite.getFullyQualifiedName());
+    queryParams.put(
+        "queryString",
+        "%7B%22query%22%3A%20%7B%22term%22%3A%20%7B%22id%22%3A%20%22"
+            + logicalTestSuite.getId()
+            + "%22%7D%7D%7D");
     ResultList<TestSuite> queryTestSuites =
         listEntitiesFromSearch(queryParams, 100, 0, ADMIN_AUTH_HEADERS);
     Assertions.assertTrue(
         queryTestSuites.getData().stream()
             .allMatch(
                 ts -> ts.getFullyQualifiedName().equals(logicalTestSuite.getFullyQualifiedName())));
+
+    queryParams.clear();
+    queryParams.put("q", logicalTestSuite.getFullyQualifiedName());
+    queryTestSuites = listEntitiesFromSearch(queryParams, 100, 0, ADMIN_AUTH_HEADERS);
+    Assertions.assertTrue(
+        queryTestSuites.getData().stream()
+            .allMatch(
+                ts -> ts.getFullyQualifiedName().equals(logicalTestSuite.getFullyQualifiedName())));
+
     // 6. List test suites with a nested sort
     queryParams.clear();
     queryParams.put("fields", "tests");
@@ -402,23 +474,23 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
     // 8. List test suites with owner
     // 8.1 Team owner
     queryParams.clear();
-    queryParams.put("owner", TEAM11_REF.getFullyQualifiedName());
-    queryParams.put("fields", "owner");
+    queryParams.put("owner", teamRef.getFullyQualifiedName());
+    queryParams.put("fields", "owners");
     ResultList<TestSuite> teamOwnerTestSuites =
         listEntitiesFromSearch(queryParams, 100, 0, ADMIN_AUTH_HEADERS);
     Assertions.assertTrue(
         teamOwnerTestSuites.getData().stream()
-            .allMatch(ts -> ts.getOwner().getId().equals(TEAM11_REF.getId())));
+            .allMatch(ts -> ts.getOwners().get(0).getId().equals(teamRef.getId())));
 
     // 8.2 User owner
     queryParams.clear();
-    queryParams.put("owner", USER1_REF.getFullyQualifiedName());
-    queryParams.put("fields", "owner");
+    queryParams.put("owner", user1Ref.getFullyQualifiedName());
+    queryParams.put("fields", "owners");
     ResultList<TestSuite> userOwnerTestSuites =
         listEntitiesFromSearch(queryParams, 100, 0, ADMIN_AUTH_HEADERS);
     Assertions.assertTrue(
         userOwnerTestSuites.getData().stream()
-            .allMatch(ts -> ts.getOwner().getId().equals(USER1_REF.getId())));
+            .allMatch(ts -> ts.getOwners().get(0).getId().equals(user1Ref.getId())));
   }
 
   @Test
@@ -437,15 +509,14 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
                         .withDataLength(10)));
     Table table = tableResourceTest.createEntity(tableReq, ADMIN_AUTH_HEADERS);
     CreateTestSuite createTestSuite = createRequest(table.getFullyQualifiedName());
-    TestSuite testSuite = createExecutableTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
+    TestSuite testSuite = createBasicTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
     List<EntityReference> testCases1 = new ArrayList<>();
 
     // We'll create tests cases for testSuite1
     for (int i = 0; i < 5; i++) {
       CreateTestCase createTestCase =
-          testCaseResourceTest
-              .createRequest(String.format("test_testSuite_2_%s_", test.getDisplayName()) + i)
-              .withTestSuite(testSuite.getFullyQualifiedName());
+          testCaseResourceTest.createRequest(
+              String.format("test_testSuite_2_%s_", test.getDisplayName()) + i);
       TestCase testCase =
           testCaseResourceTest.createAndCheckEntity(createTestCase, ADMIN_AUTH_HEADERS);
       testCases1.add(testCase.getEntityReference());
@@ -459,14 +530,14 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
                 executableTestSuite,
                 testCases1.stream().map(EntityReference::getId).collect(Collectors.toList())),
         BAD_REQUEST,
-        "You are trying to add test cases to an executable test suite.");
+        "You are trying to add test cases to a basic test suite.");
   }
 
   @Test
   void post_createExecTestSuiteNonExistingEntity_400(TestInfo test) {
     CreateTestSuite createTestSuite = createRequest(test);
     assertResponse(
-        () -> createExecutableTestSuite(createTestSuite, ADMIN_AUTH_HEADERS),
+        () -> createBasicTestSuite(createTestSuite, ADMIN_AUTH_HEADERS),
         NOT_FOUND,
         String.format("table instance for %s not found", createTestSuite.getName()));
   }
@@ -488,14 +559,14 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
                         .withDataLength(10)));
     Table table = tableResourceTest.createEntity(tableReq, ADMIN_AUTH_HEADERS);
     CreateTestSuite createTestSuite = createRequest(table.getFullyQualifiedName());
-    TestSuite testSuite = createExecutableTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
+    TestSuite testSuite = createBasicTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
 
     // We'll create tests cases for testSuite
     for (int i = 0; i < 5; i++) {
       CreateTestCase createTestCase =
-          testCaseResourceTest
-              .createRequest(String.format("test_testSuite_2_%s_", test.getDisplayName()) + i)
-              .withTestSuite(testSuite.getFullyQualifiedName());
+          testCaseResourceTest.createRequest(
+              String.format("test_testSuite_2_%s_", test.getDisplayName()) + i,
+              new MessageParser.EntityLink(Entity.TABLE, table.getFullyQualifiedName()));
       testCaseResourceTest.createAndCheckEntity(createTestCase, ADMIN_AUTH_HEADERS);
     }
 
@@ -511,7 +582,7 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
     assertEquals(5, tableTestSuite.getTests().size());
 
     // Soft delete entity
-    deleteExecutableTestSuite(tableTestSuite.getId(), true, false, ADMIN_AUTH_HEADERS);
+    deleteBasicTestSuite(tableTestSuite.getId(), true, false, ADMIN_AUTH_HEADERS);
     actualTable =
         tableResourceTest.getEntity(
             actualTable.getId(), queryParams, "testSuite", ADMIN_AUTH_HEADERS);
@@ -522,7 +593,7 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
     assertEquals(true, tableTestSuite.getDeleted());
 
     // Hard delete entity
-    deleteExecutableTestSuite(tableTestSuite.getId(), true, true, ADMIN_AUTH_HEADERS);
+    deleteBasicTestSuite(tableTestSuite.getId(), true, true, ADMIN_AUTH_HEADERS);
     actualTable = tableResourceTest.getEntity(table.getId(), "testSuite", ADMIN_AUTH_HEADERS);
     assertNull(actualTable.getTestSuite());
   }
@@ -544,7 +615,7 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
                         .withDataLength(10)));
     Table table = tableResourceTest.createEntity(tableReq, ADMIN_AUTH_HEADERS);
     CreateTestSuite createTestSuite = createRequest(table.getFullyQualifiedName());
-    TestSuite testSuite = createExecutableTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
+    TestSuite testSuite = createBasicTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
 
     HashMap<String, String> queryParams = new HashMap<>();
     queryParams.put("include", Include.ALL.value());
@@ -583,13 +654,13 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
     ResultList<TestSuite> testSuiteResultList = listEntities(queryParams, ADMIN_AUTH_HEADERS);
     assertEquals(10, testSuiteResultList.getData().size());
 
-    queryParams.put("testSuiteType", "executable");
+    queryParams.put("testSuiteType", "basic");
     testSuiteResultList = listEntities(queryParams, ADMIN_AUTH_HEADERS);
-    testSuiteResultList.getData().forEach(ts -> assertEquals(true, ts.getExecutable()));
+    testSuiteResultList.getData().forEach(ts -> assertEquals(true, ts.getBasic()));
 
     queryParams.put("testSuiteType", "logical");
     testSuiteResultList = listEntities(queryParams, ADMIN_AUTH_HEADERS);
-    testSuiteResultList.getData().forEach(ts -> assertEquals(false, ts.getExecutable()));
+    testSuiteResultList.getData().forEach(ts -> assertEquals(false, ts.getBasic()));
 
     queryParams.put("includeEmptyTestSuites", "false");
     testSuiteResultList = listEntities(queryParams, ADMIN_AUTH_HEADERS);
@@ -604,7 +675,7 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
     assertResponseContains(
         () -> createEntity(createTestSuite, ADMIN_AUTH_HEADERS),
         BAD_REQUEST,
-        "[name must not be null]");
+        "[query param name must not be null]");
 
     // Create an entity with mandatory name field empty
     final CreateTestSuite createTestSuite1 = createRequest("", "description", "displayName", null);
@@ -620,178 +691,6 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
         () -> createEntity(createTestSuite12, ADMIN_AUTH_HEADERS),
         BAD_REQUEST,
         TestUtils.getEntityNameLengthError(entityClass));
-  }
-
-  @Test
-  void buildElasticsearchAggregationFromJson(TestInfo test) {
-    JsonObject aggregationJson;
-    List<AggregationBuilder> actual;
-    List<AggregationBuilder> expected = new ArrayList<>();
-    String aggregationQuery;
-
-    // Test aggregation with nested aggregation
-    aggregationQuery =
-        """
-            {
-              "aggregations": {
-                "test_case_results": {
-                  "nested": {
-                    "path": "testCaseResultSummary"
-                  },
-                  "aggs": {
-                    "status_counts": {
-                      "terms": {
-                        "field": "testCaseResultSummary.status"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            """;
-
-    expected.add(
-        AggregationBuilders.nested("testCaseResultSummary", "testCaseResultSummary")
-            .subAggregation(
-                AggregationBuilders.terms("status_counts").field("testCaseResultSummary.status")));
-
-    aggregationJson = JsonUtils.readJson(aggregationQuery).asJsonObject();
-    actual = ElasticSearchClient.buildAggregation(aggregationJson.getJsonObject("aggregations"));
-    assertThat(actual).hasSameElementsAs(expected);
-
-    // Test aggregation with multiple aggregations
-    aggregationQuery =
-        """
-            {
-              "aggregations": {
-                "my-first-agg-name": {
-                  "terms": {
-                    "field": "my-field"
-                  }
-                },
-                "my-second-agg-name": {
-                  "terms": {
-                    "field": "my-other-field"
-                  }
-                }
-              }
-            }
-            """;
-    aggregationJson = JsonUtils.readJson(aggregationQuery).asJsonObject();
-
-    expected.clear();
-    expected.addAll(
-        List.of(
-            AggregationBuilders.terms("my-second-agg-name").field("my-other-field"),
-            AggregationBuilders.terms("my-first-agg-name").field("my-field")));
-
-    actual = ElasticSearchClient.buildAggregation(aggregationJson.getJsonObject("aggregations"));
-    assertThat(actual).hasSameElementsAs(expected);
-
-    // Test aggregation with multiple aggregations including a nested one which has itself multiple
-    // aggregations
-    aggregationQuery =
-        """
-            {
-              "aggregations": {
-                "my-first-agg-name": {
-                  "terms": {
-                    "field": "my-field"
-                  }
-                },
-                "test_case_results": {
-                  "nested": {
-                    "path": "testCaseResultSummary"
-                  },
-                  "aggs": {
-                    "status_counts": {
-                      "terms": {
-                        "field": "testCaseResultSummary.status"
-                      }
-                    },
-                    "other_status_counts": {
-                      "terms": {
-                        "field": "testCaseResultSummary.status"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            """;
-    aggregationJson = JsonUtils.readJson(aggregationQuery).asJsonObject();
-
-    expected.clear();
-    expected.addAll(
-        List.of(
-            AggregationBuilders.nested("testCaseResultSummary", "testCaseResultSummary")
-                .subAggregation(
-                    AggregationBuilders.terms("status_counts")
-                        .field("testCaseResultSummary.status"))
-                .subAggregation(
-                    AggregationBuilders.terms("other_status_counts")
-                        .field("testCaseResultSummary.status")),
-            AggregationBuilders.terms("my-first-agg-name").field("my-field")));
-
-    actual = ElasticSearchClient.buildAggregation(aggregationJson.getJsonObject("aggregations"));
-    assertThat(actual).hasSameElementsAs(expected);
-
-    // Test aggregation with nested aggregation and sub-aggregation
-    aggregationQuery =
-        """
-          {
-            "aggregations": {
-              "my-first-agg-name": {
-                "terms": {
-                  "field": "my-field"
-                },
-                "aggs": {
-                  "my-nested-agg-name": {
-                    "terms": {
-                      "field": "my-other-field"
-                    }
-                  }
-                }
-              },
-              "test_case_results": {
-                "nested": {
-                  "path": "testCaseResultSummary"
-                },
-                "aggs": {
-                  "status_counts": {
-                    "terms": {
-                      "field": "testCaseResultSummary.status"
-                    }
-                  },
-                  "other_status_counts": {
-                    "terms": {
-                      "field": "testCaseResultSummary.status"
-                    }
-                  }
-                }
-              }
-            }
-          }
-          """;
-    aggregationJson = JsonUtils.readJson(aggregationQuery).asJsonObject();
-
-    expected.clear();
-    expected.addAll(
-        List.of(
-            AggregationBuilders.nested("testCaseResultSummary", "testCaseResultSummary")
-                .subAggregation(
-                    AggregationBuilders.terms("status_counts")
-                        .field("testCaseResultSummary.status"))
-                .subAggregation(
-                    AggregationBuilders.terms("other_status_counts")
-                        .field("testCaseResultSummary.status")),
-            AggregationBuilders.terms("my-first-agg-name")
-                .field("my-field")
-                .subAggregation(
-                    AggregationBuilders.terms("my-nested-agg-name").field("my-other-field"))));
-
-    actual = ElasticSearchClient.buildAggregation(aggregationJson.getJsonObject("aggregations"));
-    assertThat(actual).hasSameElementsAs(expected);
   }
 
   @Test
@@ -811,15 +710,15 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
     Table table = tableResourceTest.createEntity(tableReq, ADMIN_AUTH_HEADERS);
     CreateTestSuite createExecutableTestSuite = createRequest(table.getFullyQualifiedName());
     TestSuite executableTestSuite =
-        createExecutableTestSuite(createExecutableTestSuite, ADMIN_AUTH_HEADERS);
+        createBasicTestSuite(createExecutableTestSuite, ADMIN_AUTH_HEADERS);
     List<EntityReference> testCases = new ArrayList<>();
 
     // We'll create tests cases for testSuite1
     for (int i = 0; i < 5; i++) {
       CreateTestCase createTestCase =
-          testCaseResourceTest
-              .createRequest(String.format("test_testSuite_2_%s_", test.getDisplayName()) + i)
-              .withTestSuite(executableTestSuite.getFullyQualifiedName());
+          testCaseResourceTest.createRequest(
+              String.format("test_testSuite_2_%s_", test.getDisplayName()) + i,
+              new MessageParser.EntityLink(Entity.TABLE, table.getFullyQualifiedName()));
       TestCase testCase =
           testCaseResourceTest.createAndCheckEntity(createTestCase, ADMIN_AUTH_HEADERS);
       testCases.add(testCase.getEntityReference());
@@ -841,8 +740,80 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
   }
 
   @Test
-  void get_listTestSuiteFromSearchWithPagination(TestInfo testInfo)
-      throws IOException, InterruptedException {
+  void delete_logicalSuiteWithPipeline(TestInfo test) throws IOException {
+    TestCaseResourceTest testCaseResourceTest = new TestCaseResourceTest();
+    TableResourceTest tableResourceTest = new TableResourceTest();
+    CreateTable tableReq =
+        tableResourceTest
+            .createRequest(test)
+            .withColumns(
+                List.of(
+                    new Column()
+                        .withName(C1)
+                        .withDisplayName("c1")
+                        .withDataType(ColumnDataType.VARCHAR)
+                        .withDataLength(10)));
+    Table table = tableResourceTest.createEntity(tableReq, ADMIN_AUTH_HEADERS);
+    CreateTestSuite createExecutableTestSuite = createRequest(table.getFullyQualifiedName());
+    TestSuite executableTestSuite =
+        createBasicTestSuite(createExecutableTestSuite, ADMIN_AUTH_HEADERS);
+    List<EntityReference> testCases1 = new ArrayList<>();
+
+    // We'll create tests cases for testSuite1
+    for (int i = 0; i < 5; i++) {
+      CreateTestCase createTestCase =
+          testCaseResourceTest.createRequest(
+              String.format("test_testSuite_2_%s_", test.getDisplayName()) + i);
+      TestCase testCase =
+          testCaseResourceTest.createAndCheckEntity(createTestCase, ADMIN_AUTH_HEADERS);
+      testCases1.add(testCase.getEntityReference());
+    }
+
+    // We'll create a logical test suite and associate the test cases to it
+    CreateTestSuite createTestSuite = createRequest(test);
+    TestSuite testSuite = createEntity(createTestSuite, ADMIN_AUTH_HEADERS);
+    addTestCasesToLogicalTestSuite(
+        testSuite, testCases1.stream().map(EntityReference::getId).collect(Collectors.toList()));
+    TestSuite logicalTestSuite = getEntity(testSuite.getId(), "*", ADMIN_AUTH_HEADERS);
+
+    // Add ingestion pipeline to the database service
+    IngestionPipelineResourceTest ingestionPipelineResourceTest =
+        new IngestionPipelineResourceTest();
+    CreateIngestionPipeline createIngestionPipeline =
+        ingestionPipelineResourceTest
+            .createRequest(test)
+            .withService(logicalTestSuite.getEntityReference());
+
+    TestSuitePipeline testSuitePipeline = new TestSuitePipeline();
+
+    SourceConfig sourceConfig = new SourceConfig().withConfig(testSuitePipeline);
+    createIngestionPipeline.withSourceConfig(sourceConfig);
+    IngestionPipeline ingestionPipeline =
+        ingestionPipelineResourceTest.createEntity(createIngestionPipeline, ADMIN_AUTH_HEADERS);
+
+    // We can GET the Ingestion Pipeline now
+    IngestionPipeline actualIngestionPipeline =
+        ingestionPipelineResourceTest.getEntity(ingestionPipeline.getId(), ADMIN_AUTH_HEADERS);
+    assertNotNull(actualIngestionPipeline);
+
+    // After deleting the test suite, we can't GET the Ingestion Pipeline
+    deleteEntity(logicalTestSuite.getId(), true, true, ADMIN_AUTH_HEADERS);
+
+    assertResponse(
+        () ->
+            ingestionPipelineResourceTest.getEntity(ingestionPipeline.getId(), ADMIN_AUTH_HEADERS),
+        NOT_FOUND,
+        String.format(
+            "ingestionPipeline instance for %s not found", actualIngestionPipeline.getId()));
+
+    // Test Cases are still there
+    TestCase testCaseInLogical =
+        testCaseResourceTest.getEntity(testCases1.get(0).getId(), "*", ADMIN_AUTH_HEADERS);
+    assertNotNull(testCaseInLogical);
+  }
+
+  @Test
+  void get_listTestSuiteFromSearchWithPagination(TestInfo testInfo) throws IOException {
     if (supportsSearchIndex) {
       Random rand = new Random();
       int tablesNum = rand.nextInt(3) + 3;
@@ -865,17 +836,67 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
                             .withDisplayName("c1")
                             .withDataType(ColumnDataType.VARCHAR)
                             .withDataLength(10)))
-                .withOwner(USER1_REF);
+                .withOwners(List.of(USER1_REF));
         Table table = tableResourceTest.createEntity(tableReq, ADMIN_AUTH_HEADERS);
         tables.add(table);
         CreateTestSuite createTestSuite =
             testSuiteResourceTest.createRequest(table.getFullyQualifiedName());
         TestSuite testSuite =
-            testSuiteResourceTest.createExecutableTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
+            testSuiteResourceTest.createBasicTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
         testSuites.put(table.getFullyQualifiedName(), testSuite);
       }
       validateEntityListFromSearchWithPagination(new HashMap<>(), testSuites.size());
     }
+  }
+
+  @Test
+  void create_executableTestSuiteAndCheckSearchClient(TestInfo test) throws IOException {
+    TableResourceTest tableResourceTest = new TableResourceTest();
+    CreateTable tableReq =
+        tableResourceTest
+            .createRequest(test)
+            .withColumns(
+                List.of(
+                    new Column()
+                        .withName(C1)
+                        .withDisplayName("c1")
+                        .withDataType(ColumnDataType.VARCHAR)
+                        .withDataLength(10)));
+    Table table = tableResourceTest.createEntity(tableReq, ADMIN_AUTH_HEADERS);
+    CreateTestSuite createTestSuite = createRequest(table.getFullyQualifiedName());
+    TestSuite testSuite = createBasicTestSuite(createTestSuite, ADMIN_AUTH_HEADERS);
+    RestClient searchClient = getSearchClient();
+    IndexMapping index = Entity.getSearchRepository().getIndexMapping(Entity.TABLE);
+    es.org.elasticsearch.client.Response response;
+    Request request =
+        new Request(
+            "GET",
+            String.format(
+                "%s/_search", index.getIndexName(Entity.getSearchRepository().getClusterAlias())));
+    String query =
+        String.format(
+            "{\"size\": 10,\"query\":{\"bool\":{\"must\":[{\"term\":{\"_id\":\"%s\"}}]}}}",
+            table.getId().toString());
+    request.setJsonEntity(query);
+    try {
+      response = searchClient.performRequest(request);
+    } finally {
+      searchClient.close();
+    }
+    String jsonString = EntityUtils.toString(response.getEntity());
+    HashMap<String, Object> map =
+        (HashMap<String, Object>) JsonUtils.readOrConvertValue(jsonString, HashMap.class);
+    LinkedHashMap<String, Object> hits = (LinkedHashMap<String, Object>) map.get("hits");
+    ArrayList<LinkedHashMap<String, Object>> hitsList =
+        (ArrayList<LinkedHashMap<String, Object>>) hits.get("hits");
+    assertNotEquals(0, hitsList.size());
+    assertTrue(
+        hitsList.stream()
+            .allMatch(
+                hit ->
+                    ((LinkedHashMap<String, Object>) hit.get("_source"))
+                        .get("id")
+                        .equals(table.getId().toString())));
   }
 
   public ResultList<TestSuite> getTestSuites(
@@ -898,10 +919,16 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
     return TestUtils.get(target, TestSuiteResource.TestSuiteList.class, authHeaders);
   }
 
-  public TestSuite createExecutableTestSuite(
+  public TestSuite createBasicTestSuite(
       CreateTestSuite createTestSuite, Map<String, String> authHeaders) throws IOException {
-    WebTarget target = getResource("dataQuality/testSuites/executable");
-    createTestSuite.setExecutableEntityReference(createTestSuite.getName());
+    WebTarget target = getResource("dataQuality/testSuites/basic");
+    createTestSuite.setBasicEntityReference(createTestSuite.getName());
+    return TestUtils.post(target, createTestSuite, TestSuite.class, authHeaders);
+  }
+
+  public TestSuite createBasicEmptySuite(
+      CreateTestSuite createTestSuite, Map<String, String> authHeaders) throws IOException {
+    WebTarget target = getResource("dataQuality/testSuites/basic");
     return TestUtils.post(target, createTestSuite, TestSuite.class, authHeaders);
   }
 
@@ -915,11 +942,10 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
     TestUtils.put(target, createLogicalTestCases, Response.Status.OK, ADMIN_AUTH_HEADERS);
   }
 
-  public void deleteExecutableTestSuite(
+  public void deleteBasicTestSuite(
       UUID id, boolean recursive, boolean hardDelete, Map<String, String> authHeaders)
       throws IOException {
-    WebTarget target =
-        getResource(String.format("dataQuality/testSuites/executable/%s", id.toString()));
+    WebTarget target = getResource(String.format("dataQuality/testSuites/basic/%s", id.toString()));
     target = recursive ? target.queryParam("recursive", true) : target;
     target = hardDelete ? target.queryParam("hardDelete", true) : target;
     TestUtils.delete(target, TestSuite.class, authHeaders);
@@ -989,13 +1015,13 @@ public class TestSuiteResourceTest extends EntityResourceTest<TestSuite, CreateT
         byName
             ? getEntityByName(entity.getFullyQualifiedName(), fields, ADMIN_AUTH_HEADERS)
             : getEntity(entity.getId(), null, ADMIN_AUTH_HEADERS);
-    assertListNull(entity.getOwner(), entity.getTests());
-    fields = "owner,tests";
+    assertListNull(entity.getOwners(), entity.getTests());
+    fields = "owners,tests,tags";
     entity =
         byName
             ? getEntityByName(entity.getFullyQualifiedName(), fields, ADMIN_AUTH_HEADERS)
             : getEntity(entity.getId(), fields, ADMIN_AUTH_HEADERS);
-    assertListNotNull(entity.getOwner(), entity.getTests());
+    assertListNotNull(entity.getOwners(), entity.getTests());
     return entity;
   }
 

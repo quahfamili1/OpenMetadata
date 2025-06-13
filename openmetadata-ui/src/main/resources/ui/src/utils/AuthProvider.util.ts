@@ -12,16 +12,18 @@
  */
 
 import {
+  AuthenticationResult,
   BrowserCacheLocation,
   Configuration,
   PopupRequest,
 } from '@azure/msal-browser';
 import { CookieStorage } from 'cookie-storage';
 import jwtDecode, { JwtPayload } from 'jwt-decode';
-import { first, isNil } from 'lodash';
+import { first, get, isEmpty, isNil } from 'lodash';
 import { WebStorageStateStore } from 'oidc-client';
 import {
   AuthenticationConfigurationWithScope,
+  OidcUser,
   UserProfile,
 } from '../components/Auth/AuthProviders/AuthProvider.interface';
 import { REDIRECT_PATHNAME, ROUTES } from '../constants/constants';
@@ -32,26 +34,28 @@ import {
 } from '../generated/configuration/authenticationConfiguration';
 import { AuthProvider } from '../generated/settings/settings';
 import { isDev } from './EnvironmentUtils';
+import { getBasePath } from './HistoryUtils';
+import { setOidcToken } from './LocalStorageUtils';
 
 const cookieStorage = new CookieStorage();
 
-// 25s for server auth approch
-export const EXPIRY_THRESHOLD_MILLES = 25 * 1000;
-// 2 minutes for client auth approch
-export const EXPIRY_THRESHOLD_MILLES_PUBLIC = 2 * 60 * 1000;
+// 1 minutes for client auth approach
+export const EXPIRY_THRESHOLD_MILLES = 1 * 60 * 1000;
+
+const subPath = getBasePath();
 
 export const getRedirectUri = (callbackUrl: string) => {
   return isDev()
-    ? 'http://localhost:3000/callback'
+    ? `http://localhost:3000${subPath}/callback`
     : !isNil(callbackUrl)
     ? callbackUrl
-    : `${window.location.origin}/callback`;
+    : `${window.location.origin}${subPath}/callback`;
 };
 
 export const getSilentRedirectUri = () => {
   return isDev()
-    ? 'http://localhost:3000/silent-callback'
-    : `${window.location.origin}/silent-callback`;
+    ? `http://localhost:3000${subPath}/silent-callback`
+    : `${window.location.origin}${subPath}/silent-callback`;
 };
 
 export const getUserManagerConfig = (
@@ -103,6 +107,7 @@ export const getAuthConfig = (
           pkce: true,
           provider,
           clientType,
+          enableSelfSignup,
         };
       }
 
@@ -118,6 +123,7 @@ export const getAuthConfig = (
           scope: 'openid email profile',
           responseType,
           clientType,
+          enableSelfSignup,
         };
       }
 
@@ -132,6 +138,7 @@ export const getAuthConfig = (
           scope: 'openid email profile',
           responseType,
           clientType,
+          enableSelfSignup,
         };
       }
 
@@ -142,6 +149,7 @@ export const getAuthConfig = (
           samlConfiguration,
           provider,
           clientType,
+          enableSelfSignup,
         };
       }
 
@@ -156,6 +164,7 @@ export const getAuthConfig = (
           scope: 'openid email profile',
           responseType: 'code',
           clientType,
+          enableSelfSignup,
         };
       }
 
@@ -167,6 +176,7 @@ export const getAuthConfig = (
         callbackUrl: redirectUri,
         provider,
         clientType,
+        enableSelfSignup,
       };
 
       break;
@@ -204,6 +214,7 @@ export const getAuthConfig = (
           },
           provider,
           clientType,
+          enableSelfSignup,
         } as Configuration;
       }
 
@@ -230,55 +241,59 @@ export const getNameFromEmail = (email: string) => {
 export const getNameFromUserData = (
   user: UserProfile,
   jwtPrincipalClaims: AuthenticationConfiguration['jwtPrincipalClaims'] = [],
-  principleDomain = ''
+  principleDomain = '',
+  jwtPrincipalClaimsMapping: AuthenticationConfiguration['jwtPrincipalClaimsMapping'] = []
 ) => {
-  // filter and extract the present claims in user profile
-  const jwtClaims = jwtPrincipalClaims.reduce(
-    (prev: string[], curr: string) => {
-      const currentClaim = user[curr as keyof UserProfile];
-      if (currentClaim) {
-        return [...prev, currentClaim];
-      } else {
-        return prev;
-      }
-    },
-    []
-  );
-
-  // get the first claim from claims list
-  const firstClaim = first(jwtClaims);
-
   let userName = '';
   let domain = principleDomain;
+  let email = '';
+  if (isEmpty(jwtPrincipalClaimsMapping)) {
+    // filter and extract the present claims in user profile
+    const jwtClaims = jwtPrincipalClaims.reduce(
+      (prev: string[], curr: string) => {
+        const currentClaim = user[curr as keyof UserProfile];
+        if (currentClaim) {
+          return [...prev, currentClaim];
+        } else {
+          return prev;
+        }
+      },
+      []
+    );
 
-  // if claims contains the "@" then split it out otherwise assign it to username as it is
-  if (firstClaim?.includes('@')) {
-    userName = firstClaim.split('@')[0];
-    domain = firstClaim.split('@')[1];
+    // get the first claim from claims list
+    const firstClaim = first(jwtClaims);
+
+    // if claims contains the "@" then split it out otherwise assign it to username as it is
+    if (firstClaim?.includes('@')) {
+      userName = firstClaim.split('@')[0];
+      domain = firstClaim.split('@')[1];
+    } else {
+      userName = firstClaim ?? '';
+    }
+
+    email = userName + '@' + domain;
   } else {
-    userName = firstClaim ?? '';
+    const mappingObj: Record<string, string> = {};
+    jwtPrincipalClaimsMapping.reduce((acc, value) => {
+      const [key, claim] = value.split(':');
+      acc[key] = claim;
+
+      return acc;
+    }, mappingObj);
+
+    if (mappingObj['username'] && mappingObj['email']) {
+      userName = get(user, mappingObj['username'], '');
+      email = get(user, mappingObj['email']);
+    } else {
+      // eslint-disable-next-line no-console
+      console.error(
+        'username or email is not present in jwtPrincipalClaimsMapping'
+      );
+    }
   }
 
-  return { name: userName, email: userName + '@' + domain };
-};
-
-export const isProtectedRoute = (pathname: string) => {
-  return (
-    [
-      ROUTES.SIGNUP,
-      ROUTES.SIGNIN,
-      ROUTES.FORGOT_PASSWORD,
-      ROUTES.CALLBACK,
-      ROUTES.SILENT_CALLBACK,
-      ROUTES.SAML_CALLBACK,
-      ROUTES.REGISTER,
-      ROUTES.RESET_PASSWORD,
-      ROUTES.ACCOUNT_ACTIVATION,
-      ROUTES.HOME,
-      ROUTES.AUTH_CALLBACK,
-      ROUTES.NOT_FOUND,
-    ].indexOf(pathname) === -1
-  );
+  return { name: userName, email: email, picture: user.picture };
 };
 
 export const isTourRoute = (pathname: string) => {
@@ -296,10 +311,7 @@ export const getUrlPathnameExpiry = () => {
  * @timeoutExpiry time in ms for try to silent sign-in
  * @returns exp, isExpired, diff, timeoutExpiry
  */
-export const extractDetailsFromToken = (
-  token: string,
-  clientType = ClientType.Public
-) => {
+export const extractDetailsFromToken = (token: string) => {
   if (token) {
     try {
       const { exp } = jwtDecode<JwtPayload>(token);
@@ -309,12 +321,10 @@ export const extractDetailsFromToken = (
         return {
           exp,
           isExpired: false,
+          timeoutExpiry: 0,
         };
       }
-      const threshouldMillis =
-        clientType === ClientType.Public
-          ? EXPIRY_THRESHOLD_MILLES_PUBLIC
-          : EXPIRY_THRESHOLD_MILLES;
+      const threshouldMillis = EXPIRY_THRESHOLD_MILLES;
 
       const diff = exp && exp * 1000 - dateNow;
       const timeoutExpiry =
@@ -334,7 +344,6 @@ export const extractDetailsFromToken = (
   return {
     exp: 0,
     isExpired: true,
-
     timeoutExpiry: 0,
   };
 };
@@ -344,5 +353,91 @@ export const setUrlPathnameExpiryAfterRoute = (pathname: string) => {
     // 1 second expiry
     expires: new Date(Date.now() + 1000),
     path: '/',
+  });
+};
+
+/**
+ * We support Principle claim as: email,preferred_username,sub in any order
+ * When Users are created from the initialAdmin we want to pick correct user details based on the principle claim
+ * This method will ensure that name & email are correctly picked from the principle claim
+ * @param user - User details extracted from Token
+ * @param jwtPrincipalClaims - List of principle claims coming from auth API response
+ * @param principalDomain - Principle Domain value coming from
+ * @param jwtPrincipalClaimsMapping - Mapping of principle claims to user profile
+ * @param clientType - Client Type Public or Confidential
+ * @returns OidcUser with Profile info plucked based on the principle claim
+ */
+export const prepareUserProfileFromClaims = ({
+  user,
+  jwtPrincipalClaims,
+  principalDomain,
+  jwtPrincipalClaimsMapping,
+  clientType,
+}: {
+  user: OidcUser;
+  jwtPrincipalClaims: string[];
+  principalDomain: string;
+  jwtPrincipalClaimsMapping: string[];
+  clientType: ClientType;
+}): OidcUser => {
+  const newUser = {
+    ...user,
+    profile:
+      clientType === ClientType.Public
+        ? getNameFromUserData(
+            user.profile,
+            jwtPrincipalClaims,
+            principalDomain,
+            jwtPrincipalClaimsMapping
+          )
+        : {
+            name: user.profile?.name ?? '',
+            email: user.profile?.email ?? '',
+          },
+  } as OidcUser;
+
+  return newUser;
+};
+
+// Responsible for parsing the response from MSAL AuthenticationResult
+export const parseMSALResponse = (response: AuthenticationResult): OidcUser => {
+  // Call your API with the access token and return the data you need to save in state
+  const { idToken, scopes, account } = response;
+
+  const user = {
+    id_token: idToken,
+    scope: scopes.join(),
+    profile: {
+      email: get(account, 'idTokenClaims.email', ''),
+      name: account?.name ?? '',
+      picture: '',
+      preferred_username: get(account, 'idTokenClaims.preferred_username', ''),
+      sub: get(account, 'idTokenClaims.sub', ''),
+    } as UserProfile,
+  };
+
+  setOidcToken(idToken);
+
+  return user;
+};
+
+export const requiredAuthFields = [
+  'authority',
+  'clientId',
+  'callbackUrl',
+  'provider',
+];
+
+export const validateAuthFields = (
+  configJson: AuthenticationConfigurationWithScope,
+  t: (key: string, options?: any) => string
+) => {
+  requiredAuthFields.forEach((field) => {
+    const value =
+      configJson[field as keyof AuthenticationConfigurationWithScope];
+    if (isEmpty(value)) {
+      // eslint-disable-next-line no-console
+      console.warn(t('message.missing-config-value', { field }));
+    }
   });
 };

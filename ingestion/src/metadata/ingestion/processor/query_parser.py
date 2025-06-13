@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -26,7 +26,7 @@ from metadata.ingestion.lineage.models import ConnectionTypeDialectMapper, Diale
 from metadata.ingestion.lineage.parser import LineageParser
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
 from metadata.utils.logger import ingestion_logger
-from metadata.utils.time_utils import convert_timestamp_to_milliseconds
+from metadata.utils.time_utils import datetime_to_timestamp
 
 logger = ingestion_logger()
 
@@ -43,10 +43,10 @@ def parse_sql_statement(record: TableQuery, dialect: Dialect) -> Optional[Parsed
 
     start_time = record.analysisDate
     if isinstance(start_time, DateTime):
-        start_date = start_time.__root__.date()
+        start_date = start_time.root.date()
         start_time = datetime.datetime.strptime(str(start_date.isoformat()), "%Y-%m-%d")
 
-    start_time = convert_timestamp_to_milliseconds(int(start_time.timestamp()))
+    start_time = datetime_to_timestamp(start_time, milliseconds=True)
 
     lineage_parser = LineageParser(record.query, dialect=dialect)
 
@@ -61,10 +61,12 @@ def parse_sql_statement(record: TableQuery, dialect: Dialect) -> Optional[Parsed
         sql=record.query,
         query_type=record.query_type,
         exclude_usage=record.exclude_usage,
+        dialect=dialect.value,
         userName=record.userName,
-        date=start_time,
+        date=str(start_time),
         serviceName=record.serviceName,
         duration=record.duration,
+        cost=record.cost,
     )
 
 
@@ -96,7 +98,7 @@ class QueryParserProcessor(Processor):
         pipeline_name: Optional[str] = None,
         **kwargs,
     ):
-        config = ConfigModel.parse_obj(config_dict)
+        config = ConfigModel.model_validate(config_dict)
         connection_type = kwargs.pop("connection_type", "")
         return cls(config, metadata, connection_type)
 

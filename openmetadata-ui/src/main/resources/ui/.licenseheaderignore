@@ -45,11 +45,11 @@
 /src/test/unit/coverage
 "text-report.xml"
 
-# Cypress
-/cypress/downloads
-/cypress/screenshots
-/cypress/videos
-/cypress/plugins
+# Playwright
+/playwright/output/
+/playwright/e2e/.cache/
+/playwright/.env
+/playwright/.auth
 
 # webpack
 /webpack
@@ -75,8 +75,11 @@ Thumbs.db
 # Sonar cloud
 "sonar-project.properties"
 
-# Generated
-src/generated
+# ignore antlr generated source
+src/generated/antlr
 
 # Snapshots
 *.snap
+
+# env
+".env"

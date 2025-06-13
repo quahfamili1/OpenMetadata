@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,6 +20,7 @@ from metadata.generated.schema.entity.data.chart import Chart, ChartType
 from metadata.generated.schema.entity.data.dashboard import (
     Dashboard as Lineage_Dashboard,
 )
+from metadata.generated.schema.entity.data.table import Table
 from metadata.generated.schema.entity.services.connections.dashboard.modeConnection import (
     ModeConnection,
 )
@@ -29,15 +30,21 @@ from metadata.generated.schema.entity.services.ingestionPipelines.status import 
 from metadata.generated.schema.metadataIngestion.workflow import (
     Source as WorkflowSource,
 )
+from metadata.generated.schema.type.basic import (
+    EntityName,
+    FullyQualifiedEntityName,
+    Markdown,
+    SourceUrl,
+)
 from metadata.ingestion.api.models import Either
 from metadata.ingestion.api.steps import InvalidSourceException
 from metadata.ingestion.lineage.parser import LineageParser
-from metadata.ingestion.lineage.sql_lineage import search_table_entities
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
 from metadata.ingestion.source.dashboard.dashboard_service import DashboardServiceSource
 from metadata.ingestion.source.dashboard.mode import client
 from metadata.utils import fqn
 from metadata.utils.filters import filter_by_chart
+from metadata.utils.fqn import build_es_fqn_search_string
 from metadata.utils.helpers import clean_uri
 from metadata.utils.logger import ingestion_logger
 
@@ -55,15 +62,16 @@ class ModeSource(DashboardServiceSource):
         metadata: OpenMetadata,
     ):
         super().__init__(config, metadata)
-        self.workspace_name = config.serviceConnection.__root__.config.workspaceName
+        self.workspace_name = config.serviceConnection.root.config.workspaceName
+        self.filter_query_param = config.serviceConnection.root.config.filterQueryParam
         self.data_sources = self.client.get_all_data_sources(self.workspace_name)
 
     @classmethod
     def create(
         cls, config_dict, metadata: OpenMetadata, pipeline_name: Optional[str] = None
     ):
-        config = WorkflowSource.parse_obj(config_dict)
-        connection: ModeConnection = config.serviceConnection.__root__.config
+        config = WorkflowSource.model_validate(config_dict)
+        connection: ModeConnection = config.serviceConnection.root.config
         if not isinstance(connection, ModeConnection):
             raise InvalidSourceException(
                 f"Expected ModeConnection, but got {connection}"
@@ -74,7 +82,9 @@ class ModeSource(DashboardServiceSource):
         """
         Get List of all dashboards
         """
-        return self.client.fetch_all_reports(self.workspace_name)
+        # If filter param field was empty, we will default to passing "all" to the API
+        filter_param = "all" if not self.filter_query_param else self.filter_query_param
+        return self.client.fetch_all_reports(self.workspace_name, filter_param)
 
     def get_dashboard_name(self, dashboard: dict) -> str:
         """
@@ -97,27 +107,33 @@ class ModeSource(DashboardServiceSource):
         dashboard_path = dashboard_details[client.LINKS][client.SHARE][client.HREF]
         dashboard_url = f"{clean_uri(self.service_connection.hostPort)}{dashboard_path}"
         dashboard_request = CreateDashboardRequest(
-            name=dashboard_details.get(client.TOKEN),
-            sourceUrl=dashboard_url,
+            name=EntityName(dashboard_details.get(client.TOKEN)),
+            sourceUrl=SourceUrl(dashboard_url),
             displayName=dashboard_details.get(client.NAME),
-            description=dashboard_details.get(client.DESCRIPTION),
+            description=Markdown(dashboard_details.get(client.DESCRIPTION))
+            if dashboard_details.get(client.DESCRIPTION)
+            else None,
             charts=[
-                fqn.build(
-                    self.metadata,
-                    entity_type=Chart,
-                    service_name=self.context.get().dashboard_service,
-                    chart_name=chart,
+                FullyQualifiedEntityName(
+                    fqn.build(
+                        self.metadata,
+                        entity_type=Chart,
+                        service_name=self.context.get().dashboard_service,
+                        chart_name=chart,
+                    )
                 )
                 for chart in self.context.get().charts or []
             ],
             service=self.context.get().dashboard_service,
-            owner=self.get_owner_ref(dashboard_details=dashboard_details),
+            owners=self.get_owner_ref(dashboard_details=dashboard_details),
         )
         yield Either(right=dashboard_request)
         self.register_record(dashboard_request=dashboard_request)
 
     def yield_dashboard_lineage_details(
-        self, dashboard_details: dict, db_service_name: str
+        self,
+        dashboard_details: dict,
+        db_service_name: Optional[str] = None,
     ) -> Iterable[Either[AddLineageRequest]]:
         """Get lineage method"""
         try:
@@ -138,14 +154,18 @@ class ModeSource(DashboardServiceSource):
                     database_schema_name = self.check_database_schema_name(
                         database_schema_name
                     )
-                    from_entities = search_table_entities(
-                        metadata=self.metadata,
-                        database=data_source.get(client.DATABASE),
-                        service_name=db_service_name,
-                        database_schema=database_schema_name,
-                        table=table,
+                    fqn_search_string = build_es_fqn_search_string(
+                        database_name=data_source.get(client.DATABASE),
+                        schema_name=database_schema_name,
+                        service_name=db_service_name or "*",
+                        table_name=table,
                     )
-                    for from_entity in from_entities:
+                    from_entities = self.metadata.search_in_any_service(
+                        entity_type=Table,
+                        fqn_search_string=fqn_search_string,
+                        fetch_multiple_entities=True,
+                    )
+                    for from_entity in from_entities or []:
                         to_entity = self.metadata.get_by_name(
                             entity=Lineage_Dashboard,
                             fqn=fqn.build(
@@ -201,10 +221,10 @@ class ModeSource(DashboardServiceSource):
                     )
                     yield Either(
                         right=CreateChartRequest(
-                            name=chart.get(client.TOKEN),
+                            name=EntityName(chart.get(client.TOKEN)),
                             displayName=chart_name,
                             chartType=ChartType.Other,
-                            sourceUrl=chart_url,
+                            sourceUrl=SourceUrl(chart_url),
                             service=self.context.get().dashboard_service,
                         )
                     )

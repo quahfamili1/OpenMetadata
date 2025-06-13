@@ -31,6 +31,7 @@ import { ERROR_PLACEHOLDER_TYPE } from '../../enums/common.enum';
 import { App } from '../../generated/entity/applications/app';
 import { Include } from '../../generated/type/include';
 import { Paging } from '../../generated/type/paging';
+import LimitWrapper from '../../hoc/LimitWrapper';
 import { usePaging } from '../../hooks/paging/usePaging';
 import { getApplicationList } from '../../rest/applicationAPI';
 import { getEntityName } from '../../utils/EntityUtils';
@@ -133,7 +134,7 @@ const ApplicationPage = () => {
 
   return (
     <PageLayoutV1 pageTitle={t('label.application-plural')}>
-      <Row className="page-container" gutter={[0, 16]}>
+      <Row gutter={[0, 16]}>
         <Col span={24}>
           <TitleBreadcrumb titleLinks={breadcrumbs} />
         </Col>
@@ -150,22 +151,24 @@ const ApplicationPage = () => {
               />
               <span className="m-l-xs">{t('label.disabled')}</span>
             </div>
-            <Button
-              data-testid="add-application"
-              type="primary"
-              onClick={handleAddApplication}>
-              {t('label.add-entity', {
-                entity: t('label.app-plural'),
-              })}
-            </Button>
+            <LimitWrapper resource="app">
+              <Button
+                data-testid="add-application"
+                type="primary"
+                onClick={handleAddApplication}>
+                {t('label.add-entity', {
+                  entity: t('label.app-plural'),
+                })}
+              </Button>
+            </LimitWrapper>
           </Space>
         </Col>
       </Row>
-      <Row className="page-container m-t-lg">
+      <Row className="m-t-lg" gutter={[20, 20]}>
         {isLoading &&
-          [1, 2, 3].map((key) => (
-            <Col key={key} span={8}>
-              <Card className="w-400">
+          [1, 2, 3, 4].map((key) => (
+            <Col key={key} lg={8} md={12} sm={24} xl={6}>
+              <Card>
                 <Skeleton active paragraph title />
               </Card>
             </Col>
@@ -176,26 +179,33 @@ const ApplicationPage = () => {
         {!isLoading && (
           <>
             <Col span={24}>
-              <div className="d-flex flex-wrap gap-3">
+              <Row className="applications-card-container" gutter={[20, 20]}>
                 {applicationData?.map((item) => (
-                  <ApplicationCard
-                    appName={item.fullyQualifiedName ?? ''}
-                    className="w-400"
-                    deleted={item.deleted}
-                    description={item.description ?? ''}
-                    key={uniqueId()}
-                    linkTitle={t('label.configure')}
-                    showDescription={false}
-                    title={getEntityName(item)}
-                    onClick={() => viewAppDetails(item)}
-                  />
+                  <Col
+                    key={item.fullyQualifiedName}
+                    lg={8}
+                    md={12}
+                    sm={24}
+                    xl={6}>
+                    <ApplicationCard
+                      appName={item.fullyQualifiedName ?? ''}
+                      deleted={item.deleted}
+                      description={item.description ?? ''}
+                      key={uniqueId()}
+                      linkTitle={t('label.configure')}
+                      showDescription={false}
+                      title={getEntityName(item)}
+                      onClick={() => viewAppDetails(item)}
+                    />
+                  </Col>
                 ))}
-              </div>
+              </Row>
             </Col>
             <Col span={24}>
               {showPagination && (
                 <NextPrevious
                   currentPage={currentPage}
+                  isLoading={isLoading}
                   pageSize={pageSize}
                   paging={paging}
                   pagingHandler={handleApplicationPageChange}

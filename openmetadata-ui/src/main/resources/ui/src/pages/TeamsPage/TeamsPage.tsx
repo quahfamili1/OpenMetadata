@@ -29,7 +29,7 @@ import {
   ResourceEntity,
 } from '../../context/PermissionProvider/PermissionProvider.interface';
 import { ERROR_PLACEHOLDER_TYPE } from '../../enums/common.enum';
-import { EntityType } from '../../enums/entity.enum';
+import { EntityType, TabSpecificField } from '../../enums/entity.enum';
 import { SearchIndex } from '../../enums/search.enum';
 import { CreateTeam, TeamType } from '../../generated/api/teams/createTeam';
 import { EntityReference } from '../../generated/entity/data/table';
@@ -40,15 +40,16 @@ import { useFqn } from '../../hooks/useFqn';
 import { searchData } from '../../rest/miscAPI';
 import {
   createTeam,
+  deleteUserFromTeam,
   getTeamByName,
   getTeams,
   patchTeamDetail,
+  updateUsersFromTeam,
 } from '../../rest/teamsAPI';
 import { updateUserDetail } from '../../rest/userAPI';
 import { getEntityReferenceFromEntity } from '../../utils/EntityUtils';
 import { DEFAULT_ENTITY_PERMISSION } from '../../utils/PermissionsUtils';
 import { getTeamsWithFqnPath } from '../../utils/RouterUtils';
-import { getDecodedFqn } from '../../utils/StringsUtils';
 import { showErrorToast, showSuccessToast } from '../../utils/ToastUtils';
 import AddTeamForm from './AddTeamForm';
 
@@ -64,8 +65,6 @@ const TeamsPage = () => {
 
   const [showDeletedTeam, setShowDeletedTeam] = useState<boolean>(false);
   const [isPageLoading, setIsPageLoading] = useState<boolean>(true);
-  const [isDescriptionEditable, setIsDescriptionEditable] =
-    useState<boolean>(false);
 
   const [isAddingTeam, setIsAddingTeam] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -76,23 +75,14 @@ const TeamsPage = () => {
   const [entityPermissions, setEntityPermissions] =
     useState<OperationPermission>(DEFAULT_ENTITY_PERMISSION);
   const [isFetchingAdvancedDetails, setFetchingAdvancedDetails] =
-    useState<boolean>(false);
+    useState<boolean>(true);
   const [isFetchAllTeamAdvancedDetails, setFetchAllTeamAdvancedDetails] =
     useState<boolean>(false);
-
-  const isGroupType = useMemo(
-    () => selectedTeam.teamType === TeamType.Group,
-    [selectedTeam]
-  );
 
   const hasViewPermission = useMemo(
     () => entityPermissions.ViewAll || entityPermissions.ViewBasic,
     [entityPermissions]
   );
-
-  const descriptionHandler = (value: boolean) => {
-    setIsDescriptionEditable(value);
-  };
 
   const handleAddTeam = (value: boolean) => {
     setIsAddingTeam(value);
@@ -117,7 +107,7 @@ const TeamsPage = () => {
   const fetchAllTeamsBasicDetails = async (parentTeam?: string) => {
     try {
       const { data } = await getTeams({
-        parentTeam: getDecodedFqn(parentTeam ?? '') ?? 'organization',
+        parentTeam: parentTeam ?? 'organization',
         include: Include.All,
       });
 
@@ -143,9 +133,14 @@ const TeamsPage = () => {
 
     try {
       const { data } = await getTeams({
-        parentTeam: getDecodedFqn(parentTeam ?? '') ?? 'organization',
+        parentTeam: parentTeam ?? 'organization',
         include: Include.All,
-        fields: 'userCount,childrenCount,owns,parents',
+        fields: [
+          TabSpecificField.USER_COUNT,
+          TabSpecificField.CHILDREN_COUNT,
+          TabSpecificField.OWNS,
+          TabSpecificField.PARENTS,
+        ],
       });
 
       const modifiedTeams: Team[] = data.map((team) => ({
@@ -177,7 +172,7 @@ const TeamsPage = () => {
     setIsPageLoading(loadPage);
     try {
       const data = await getTeamByName(name, {
-        fields: 'parents',
+        fields: TabSpecificField.PARENTS,
         include: Include.All,
       });
       if (data) {
@@ -193,21 +188,21 @@ const TeamsPage = () => {
     }
   };
 
-  const fetchAssets = async () => {
-    if (selectedTeam.id && isGroupType) {
+  const fetchAssets = async (selectedTeam: Team) => {
+    if (selectedTeam.id && selectedTeam.teamType === TeamType.Group) {
       try {
         const res = await searchData(
           ``,
           0,
           0,
-          `owner.id:${selectedTeam.id}`,
+          `owners.id:${selectedTeam.id}`,
           '',
           '',
           SearchIndex.ALL
         );
         const total = res?.data?.hits?.total.value ?? 0;
         setAssets(total);
-      } catch (error) {
+      } catch {
         // Error
       }
     }
@@ -217,7 +212,12 @@ const TeamsPage = () => {
     setIsPageLoading(loadPage);
     try {
       const data = await getTeamByName(name, {
-        fields: 'users,parents,profile',
+        fields: [
+          TabSpecificField.USER_COUNT,
+          TabSpecificField.PARENTS,
+          TabSpecificField.PROFILE,
+          TabSpecificField.OWNERS,
+        ],
         include: Include.All,
       });
 
@@ -236,12 +236,18 @@ const TeamsPage = () => {
     setFetchingAdvancedDetails(true);
     try {
       const data = await getTeamByName(name, {
-        fields: 'users,defaultRoles,policies,childrenCount,domain',
+        fields: [
+          TabSpecificField.USERS,
+          TabSpecificField.DEFAULT_ROLES,
+          TabSpecificField.POLICIES,
+          TabSpecificField.CHILDREN_COUNT,
+          TabSpecificField.DOMAINS,
+        ],
         include: Include.All,
       });
 
       setSelectedTeam((prev) => ({ ...prev, ...data }));
-      fetchAssets();
+      fetchAssets(data);
     } catch (error) {
       showErrorToast(error as AxiosError, t('server.unexpected-response'));
     } finally {
@@ -261,6 +267,8 @@ const TeamsPage = () => {
   const createNewTeam = async (data: Team) => {
     try {
       setIsLoading(true);
+      const domains =
+        data?.domains?.map((domain) => domain.fullyQualifiedName ?? '') ?? [];
       const teamData: CreateTeam = {
         name: data.name,
         displayName: data.displayName,
@@ -268,11 +276,14 @@ const TeamsPage = () => {
         teamType: data.teamType as TeamType,
         parents: fqn ? [selectedTeam.id] : undefined,
         email: data.email || undefined,
+        domains,
+        isJoinable: data.isJoinable,
       };
+
       const res = await createTeam(teamData);
       if (res) {
-        fetchTeamBasicDetails(selectedTeam.name, true);
         handleAddTeam(false);
+        await fetchTeamBasicDetails(selectedTeam.name, true);
         loadAdvancedDetails();
       }
     } catch (error) {
@@ -352,15 +363,18 @@ const TeamsPage = () => {
    * @param data
    */
   const addUsersToTeam = async (data: Array<EntityReference>) => {
-    if (!isUndefined(selectedTeam) && !isUndefined(selectedTeam.users)) {
-      const updatedTeam = {
-        ...selectedTeam,
-        users: data,
-      };
-      const jsonPatch = compare(selectedTeam, updatedTeam);
+    if (!isUndefined(selectedTeam)) {
       try {
-        const res = await patchTeamDetail(selectedTeam.id, jsonPatch);
-        setSelectedTeam((prev) => ({ ...prev, ...res }));
+        const res = await updateUsersFromTeam(selectedTeam.id, data);
+        if (res) {
+          setSelectedTeam((prev) => ({
+            ...prev,
+            users: data,
+            userCount: data.length,
+          }));
+        } else {
+          throw new Error(t('server.unexpected-response'));
+        }
       } catch (error) {
         showErrorToast(
           error as AxiosError,
@@ -376,38 +390,27 @@ const TeamsPage = () => {
    * Take user id and remove that user from the team
    * @param id - user id
    */
-  const removeUserFromTeam = (id: string) => {
-    const newUsers = selectedTeam?.users?.filter((user) => {
-      return user.id !== id;
-    });
-    const updatedTeam = {
-      ...selectedTeam,
-      users: newUsers,
-    };
-
-    const jsonPatch = compare(selectedTeam, updatedTeam);
-
-    return new Promise<void>((resolve) => {
-      patchTeamDetail(selectedTeam.id, jsonPatch)
-        .then((res) => {
-          if (res) {
-            setSelectedTeam((prev) => ({ ...prev, ...res }));
-          } else {
-            throw t('server.unexpected-response');
-          }
+  const removeUserFromTeam = async (id: string) => {
+    const updatedUsers = selectedTeam?.users?.filter((user) => user.id !== id);
+    try {
+      const res = await deleteUserFromTeam(selectedTeam.id, id);
+      if (res) {
+        setSelectedTeam((prev) => ({
+          ...prev,
+          users: updatedUsers,
+          userCount: updatedUsers?.length,
+        }));
+      } else {
+        throw new Error(t('server.unexpected-response'));
+      }
+    } catch (error) {
+      showErrorToast(
+        error as AxiosError,
+        t('server.entity-updating-error', {
+          entity: t('label.team'),
         })
-        .catch((error: AxiosError) => {
-          showErrorToast(
-            error,
-            t('server.entity-updating-error', {
-              entity: t('label.team'),
-            })
-          );
-        })
-        .finally(() => {
-          resolve();
-        });
-    });
+      );
+    }
   };
 
   const onDescriptionUpdate = async (updatedHTML: string) => {
@@ -423,11 +426,7 @@ const TeamsPage = () => {
         }
       } catch (error) {
         showErrorToast(error as AxiosError);
-      } finally {
-        descriptionHandler(false);
       }
-    } else {
-      descriptionHandler(false);
     }
   };
 
@@ -494,11 +493,24 @@ const TeamsPage = () => {
   }
 
   if (!hasViewPermission) {
-    return <ErrorPlaceHolder type={ERROR_PLACEHOLDER_TYPE.PERMISSION} />;
+    return (
+      <ErrorPlaceHolder
+        className="border-none"
+        permissionValue={t('label.view-entity', {
+          entity: t('label.team-plural'),
+        })}
+        type={ERROR_PLACEHOLDER_TYPE.PERMISSION}
+      />
+    );
   }
 
   if (isEmpty(selectedTeam)) {
-    return <ErrorPlaceHolder />;
+    return (
+      <ErrorPlaceHolder
+        className="border-none"
+        type={ERROR_PLACEHOLDER_TYPE.NO_DATA}
+      />
+    );
   }
 
   return (
@@ -508,13 +520,11 @@ const TeamsPage = () => {
         assetsCount={assets}
         childTeams={childTeams}
         currentTeam={selectedTeam}
-        descriptionHandler={descriptionHandler}
         entityPermissions={entityPermissions}
         handleAddTeam={handleAddTeam}
         handleAddUser={addUsersToTeam}
         handleJoinTeamClick={handleJoinTeamClick}
         handleLeaveTeamClick={handleLeaveTeamClick}
-        isDescriptionEditable={isDescriptionEditable}
         isFetchingAdvancedDetails={isFetchingAdvancedDetails}
         isFetchingAllTeamAdvancedDetails={isFetchAllTeamAdvancedDetails}
         isTeamMemberLoading={isDataLoading}

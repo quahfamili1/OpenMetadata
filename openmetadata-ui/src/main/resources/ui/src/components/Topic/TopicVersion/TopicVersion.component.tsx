@@ -13,11 +13,10 @@
 
 import { Col, Row, Space, Tabs, TabsProps, Tag } from 'antd';
 import classNames from 'classnames';
-import { isEmpty, noop } from 'lodash';
+import { isEmpty } from 'lodash';
 import React, { FC, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHistory, useParams } from 'react-router-dom';
-import { getVersionPath } from '../../../constants/constants';
 import { EntityField } from '../../../constants/Feeds.constants';
 import { EntityTabs, EntityType } from '../../../enums/entity.enum';
 import { ChangeDescription } from '../../../generated/entity/data/topic';
@@ -27,12 +26,13 @@ import {
   getEntityVersionByField,
   getEntityVersionTags,
 } from '../../../utils/EntityVersionUtils';
+import { getVersionPath } from '../../../utils/RouterUtils';
 import { stringToHTML } from '../../../utils/StringsUtils';
-import { getUpdatedMessageSchema } from '../../../utils/TopicVersionUtils';
 import { CustomPropertyTable } from '../../common/CustomPropertyTable/CustomPropertyTable';
 import DescriptionV1 from '../../common/EntityDescription/DescriptionV1';
 import Loader from '../../common/Loader/Loader';
 import TabsLabel from '../../common/TabsLabel/TabsLabel.component';
+import { GenericProvider } from '../../Customization/GenericProvider/GenericProvider';
 import DataAssetsVersionHeader from '../../DataAssets/DataAssetsVersionHeader/DataAssetsVersionHeader';
 import DataProductsContainer from '../../DataProducts/DataProductsContainer/DataProductsContainer.component';
 import EntityVersionTimeLine from '../../Entity/EntityVersionTimeLine/EntityVersionTimeLine';
@@ -44,7 +44,7 @@ const TopicVersion: FC<TopicVersionProp> = ({
   version,
   currentVersionData,
   isVersionLoading,
-  owner,
+  owners,
   tier,
   slashedTopicName,
   versionList,
@@ -67,17 +67,12 @@ const TopicVersion: FC<TopicVersionProp> = ({
       () =>
         getCommonExtraInfoForVersionDetails(
           changeDescription,
-          owner,
+          owners,
           tier,
           domain
         ),
-      [changeDescription, owner, tier, domain]
+      [changeDescription, owners, tier, domain]
     );
-
-  const messageSchemaDiff = useMemo(
-    () => getUpdatedMessageSchema(currentVersionData, changeDescription),
-    [currentVersionData, changeDescription]
-  );
 
   useEffect(() => {
     setChangeDescription(
@@ -136,7 +131,7 @@ const TopicVersion: FC<TopicVersionProp> = ({
         key: EntityTabs.SCHEMA,
         label: <TabsLabel id={EntityTabs.SCHEMA} name={t('label.schema')} />,
         children: (
-          <Row gutter={[0, 16]} wrap={false}>
+          <Row className="h-full" gutter={[0, 16]} wrap={false}>
             <Col className="p-t-sm m-x-lg" flex="auto">
               <Row gutter={[0, 16]}>
                 <Col span={24}>
@@ -147,16 +142,7 @@ const TopicVersion: FC<TopicVersionProp> = ({
                   />
                 </Col>
                 <Col span={24}>
-                  <TopicSchemaFields
-                    isReadOnly
-                    isVersionView
-                    entityFqn={currentVersionData?.fullyQualifiedName ?? ''}
-                    hasDescriptionEditAccess={false}
-                    hasTagEditAccess={false}
-                    messageSchema={messageSchemaDiff}
-                    schemaTypePlaceholder={schemaType}
-                    onThreadLinkSelect={noop}
-                  />
+                  <TopicSchemaFields schemaTypePlaceholder={schemaType} />
                 </Col>
               </Row>
             </Col>
@@ -166,12 +152,14 @@ const TopicVersion: FC<TopicVersionProp> = ({
               flex="220px">
               <Space className="w-full" direction="vertical" size="large">
                 <DataProductsContainer
+                  newLook
                   activeDomain={domain}
                   dataProducts={dataProducts ?? []}
                   hasPermission={false}
                 />
                 {Object.keys(TagSource).map((tagType) => (
                   <TagsContainerV2
+                    newLook
                     entityType={EntityType.TOPIC}
                     key={tagType}
                     permission={false}
@@ -195,7 +183,6 @@ const TopicVersion: FC<TopicVersionProp> = ({
         children: (
           <CustomPropertyTable
             isVersionView
-            entityDetails={currentVersionData}
             entityType={EntityType.TOPIC}
             hasEditAccess={false}
             hasPermission={entityPermissions.ViewAll}
@@ -203,14 +190,7 @@ const TopicVersion: FC<TopicVersionProp> = ({
         ),
       },
     ],
-    [
-      description,
-      messageSchemaDiff,
-      currentVersionData,
-      entityPermissions,
-      schemaType,
-      tags,
-    ]
+    [description, currentVersionData, entityPermissions, schemaType, tags]
   );
 
   return (
@@ -236,19 +216,29 @@ const TopicVersion: FC<TopicVersionProp> = ({
                 onVersionClick={backHandler}
               />
             </Col>
-            <Col span={24}>
-              <Tabs
-                defaultActiveKey={tab ?? EntityTabs.SCHEMA}
-                items={tabItems}
-                onChange={handleTabChange}
-              />
-            </Col>
+            <GenericProvider
+              isVersionView
+              currentVersionData={currentVersionData}
+              data={currentVersionData}
+              permissions={entityPermissions}
+              type={EntityType.TOPIC}
+              onUpdate={() => Promise.resolve()}>
+              <Col className="entity-version-page-tabs" span={24}>
+                <Tabs
+                  className="tabs-new"
+                  defaultActiveKey={tab}
+                  items={tabItems}
+                  onChange={handleTabChange}
+                />
+              </Col>
+            </GenericProvider>
           </Row>
         </div>
       )}
 
       <EntityVersionTimeLine
         currentVersion={version}
+        entityType={EntityType.TOPIC}
         versionHandler={versionHandler}
         versionList={versionList}
         onBack={backHandler}

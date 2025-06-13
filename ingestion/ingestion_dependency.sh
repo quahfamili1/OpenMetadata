@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,7 +15,7 @@ DB_PORT=${DB_PORT:-3306}
 
 AIRFLOW_DB=${AIRFLOW_DB:-airflow_db}
 DB_USER=${DB_USER:-airflow_user}
-DB_SCHEME=${DB_SCHEME:-mysql+pymysql}
+DB_SCHEME=${DB_SCHEME:-mysql+mysqldb}  # pymysql has issues migrating past Airflow 2.9.1
 DB_PASSWORD=${DB_PASSWORD:-airflow_pass}
 DB_PROPERTIES=${DB_PROPERTIES:-""}
 
@@ -33,7 +33,7 @@ export AIRFLOW__API__AUTH_BACKEND=${AIRFLOW__API__AUTH_BACKENDS:-"airflow.api.au
 # Use the default airflow env var or the one we set from OM properties
 export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN:-$DB_CONN}
 
-airflow db init
+airflow db migrate
 
 airflow users create \
     --username ${AIRFLOW_ADMIN_USER} \
@@ -42,9 +42,6 @@ airflow users create \
     --role Admin \
     --email spiderman@superhero.org \
     --password ${AIRFLOW_ADMIN_PASSWORD}
-
-(sleep 5; airflow db migrate)
-(sleep 5; airflow db migrate)
 
 # we need to this in case the container is restarted and the scheduler exited without tidying up its lock file
 rm -f /opt/airflow/airflow-webserver-monitor.pid

@@ -1,8 +1,8 @@
 #  Copyright 2022 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -86,4 +86,4 @@ def render_template(environment: Environment, template_file: str = "config.yml")
 
 def create_ometa_connection_obj(config: str) -> OpenMetadataConnection:
     """Create OpenMetadata connection"""
-    return OpenMetadataConnection.parse_obj(yaml.safe_load(config))
+    return OpenMetadataConnection.model_validate(yaml.safe_load(config))

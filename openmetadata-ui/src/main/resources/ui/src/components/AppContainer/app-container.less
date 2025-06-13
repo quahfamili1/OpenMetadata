@@ -11,47 +11,13 @@
  *  limitations under the License.
  */
 
-@import url('../../styles/variables.less');
-@import (reference) '~antd/dist/antd.less';
+@import (reference) url('../../styles/variables.less');
 
 .app-container {
-  min-height: 100vh !important;
-  background-color: white;
-  .ant-layout-header {
-    line-height: inherit;
-  }
-  .navbar-container {
-    border-bottom: 1px solid @border-color;
-    padding: 13px 24px 13px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    .appbar-search {
-      min-width: 380px;
-      width: calc(100vw - 800px);
-    }
-    .navbar-items {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-  }
-  .left-sidebar-col {
-    padding-right: 0 !important;
-    z-index: 999;
-    .left-panel-card {
-      border-radius: 0 !important;
-      border-top: 0;
-      background-color: @white;
-      padding-bottom: @padding-lg;
-    }
-  }
-  .ant-layout-content {
+  height: 100vh;
+
+  &.extra-banner {
+    // Remove the height of the banner
     height: calc(100vh - 64px);
-    overflow-y: auto;
-  }
-  .main-content .my-data-page {
-    min-width: 900px;
-    overflow-x: auto;
   }
 }

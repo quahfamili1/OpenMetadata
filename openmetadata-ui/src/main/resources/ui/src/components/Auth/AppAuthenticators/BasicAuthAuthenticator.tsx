@@ -15,6 +15,7 @@ import React, {
   forwardRef,
   Fragment,
   ReactNode,
+  useCallback,
   useImperativeHandle,
 } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +26,11 @@ import {
 } from '../../../rest/auth-API';
 
 import { useApplicationStore } from '../../../hooks/useApplicationStore';
+import {
+  getRefreshToken,
+  setOidcToken,
+  setRefreshToken,
+} from '../../../utils/LocalStorageUtils';
 import Loader from '../../common/Loader/Loader';
 import { useBasicAuth } from '../AuthProviders/BasicAuthProvider';
 
@@ -36,43 +42,38 @@ const BasicAuthenticator = forwardRef(
   ({ children }: BasicAuthenticatorInterface, ref) => {
     const { handleLogout } = useBasicAuth();
     const { t } = useTranslation();
-    const {
-      setIsAuthenticated,
-      authConfig,
-      getRefreshToken,
-      setRefreshToken,
-      setOidcToken,
-      isApplicationLoading,
-    } = useApplicationStore();
+    const { authConfig, isApplicationLoading } = useApplicationStore();
 
-    const handleSilentSignIn = async (): Promise<AccessTokenResponse> => {
-      const refreshToken = getRefreshToken();
+    const handleSilentSignIn =
+      useCallback(async (): Promise<AccessTokenResponse> => {
+        const refreshToken = getRefreshToken();
 
-      if (
-        authConfig?.provider !== AuthProvider.Basic &&
-        authConfig?.provider !== AuthProvider.LDAP
-      ) {
-        Promise.reject(t('message.authProvider-is-not-basic'));
-      }
+        if (
+          authConfig?.provider !== AuthProvider.Basic &&
+          authConfig?.provider !== AuthProvider.LDAP
+        ) {
+          return Promise.reject(
+            new Error(t('message.authProvider-is-not-basic'))
+          );
+        }
 
-      const response = await getAccessTokenOnExpiry({
-        refreshToken: refreshToken as string,
-      });
+        if (!refreshToken) {
+          return Promise.reject(new Error(t('message.no-token-available')));
+        }
 
-      setRefreshToken(response.refreshToken);
-      setOidcToken(response.accessToken);
+        const response = await getAccessTokenOnExpiry({
+          refreshToken: refreshToken as string,
+        });
 
-      return Promise.resolve(response);
-    };
+        setRefreshToken(response.refreshToken);
+        setOidcToken(response.accessToken);
+
+        return Promise.resolve(response);
+      }, [authConfig, getRefreshToken, setOidcToken, setRefreshToken, t]);
 
     useImperativeHandle(ref, () => ({
-      invokeLogout() {
-        handleLogout();
-        setIsAuthenticated(false);
-      },
-      renewIdToken() {
-        return handleSilentSignIn();
-      },
+      invokeLogout: handleLogout,
+      renewIdToken: handleSilentSignIn,
     }));
 
     /**

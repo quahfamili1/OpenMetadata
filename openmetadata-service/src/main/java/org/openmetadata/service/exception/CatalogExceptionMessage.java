@@ -35,7 +35,7 @@ public final class CatalogExceptionMessage {
   public static final String PASSWORD_INVALID_FORMAT =
       "Password must be of minimum 8 characters, with one special, one Upper, one lower case character, and one Digit.";
   public static final String MAX_FAILED_LOGIN_ATTEMPT =
-      "Failed Login Attempts Exceeded. Please try after some time.";
+      "Failed Login Attempts Exceeded. Use Forgot Password or retry after some time.";
 
   public static final String INCORRECT_OLD_PASSWORD = "INCORRECT_OLD_PASSWORD";
 
@@ -81,6 +81,12 @@ public final class CatalogExceptionMessage {
 
   public static final String SELF_SIGNUP_NOT_ENABLED = "SELF_SIGNUP_NOT_ENABLED";
   public static final String SELF_SIGNUP_ERROR = "Signup is not supported.";
+  public static final String OTHER_USER_SIGN_UP_ERROR = "OTHER_USER_SIGN_UP_ERROR";
+  public static final String OTHER_USER_SIGN_UP =
+      "Self Signup can only create user for self. Only Admin can create other users.";
+  public static final String SELF_SIGNUP_DISABLED_MESSAGE =
+      "Self Signup is not enabled. Please contact your Administrator for assistance with account creation";
+
   public static final String NOT_IMPLEMENTED_METHOD = "Method not implemented.";
 
   public static final String AUTHENTICATOR_OPERATION_NOT_SUPPORTED =
@@ -93,8 +99,9 @@ public final class CatalogExceptionMessage {
   public static final String TOKEN_EXPIRY_ERROR =
       "Email Verification Token %s is expired. Please issue a new request for email verification.";
   public static final String INVALID_BOT_USER = "Revoke Token can only be applied to Bot Users.";
-  public static final String LIVE_APP_SCHEDULE_ERR = "Live Application cannot scheduled.";
+  public static final String NO_MANUAL_TRIGGER_ERR = "App does not support manual trigger.";
   public static final String INVALID_APP_TYPE = "Application Type is not valid.";
+  public static final String CSV_EXPORT_FAILED = "CSV Export Failed.";
 
   private CatalogExceptionMessage() {}
 
@@ -111,6 +118,9 @@ public final class CatalogExceptionMessage {
   }
 
   public static String invalidName(String name) {
+    if (name == null) {
+      return "name must not be null";
+    }
     return String.format("Invalid name %s", name);
   }
 
@@ -182,6 +192,12 @@ public final class CatalogExceptionMessage {
     return String.format("Principal: CatalogPrincipal{name='%s'} is not admin", name);
   }
 
+  public static String operationNotAllowed(String name, MetadataOperation operation) {
+    return String.format(
+        "Principal: CatalogPrincipal{name='%s'} operations [%s] not allowed",
+        name, operation.value());
+  }
+
   public static String notReviewer(String name) {
     return String.format("User '%s' is not a reviewer", name);
   }
@@ -207,6 +223,20 @@ public final class CatalogExceptionMessage {
         "Principal: CatalogPrincipal{name='%s'} operations %s not allowed", user, operations);
   }
 
+  public static String resourcePermissionNotAllowed(
+      String user, List<MetadataOperation> operations, List<String> resources) {
+    return String.format(
+        "Principal: CatalogPrincipal{name='%s'} operations %s not allowed for resources {%s}.",
+        user, operations, resources);
+  }
+
+  public static String domainPermissionNotAllowed(
+      String user, String domainName, List<MetadataOperation> operations) {
+    return String.format(
+        "Principal: CatalogPrincipal{name='%s'} does not belong to domain %s. to perform the %s ",
+        user, domainName, operations);
+  }
+
   public static String taskOperationNotAllowed(String user, String operations) {
     return String.format(
         "Principal: CatalogPrincipal{name='%s'} operations %s not allowed", user, operations);
@@ -225,8 +255,17 @@ public final class CatalogExceptionMessage {
     return String.format("Unknown custom field %s", fieldName);
   }
 
+  public static String dateTimeValidationError(String fieldName, String format) {
+    return String.format(
+        "Custom field %s value is not as per defined format %s", fieldName, format);
+  }
+
   public static String jsonValidationError(String fieldName, String validationMessages) {
     return String.format("Custom field %s has invalid JSON %s", fieldName, validationMessages);
+  }
+
+  public static String customPropertyConfigError(String fieldName, String validationMessages) {
+    return String.format("Custom Property %s has invalid value %s", fieldName, validationMessages);
   }
 
   public static String invalidParent(Team parent, String child, TeamType childType) {
@@ -250,10 +289,23 @@ public final class CatalogExceptionMessage {
         "Team of type %s can't own entities. Only Team of type Group can own entities.", teamType);
   }
 
+  public static String invalidTeamUpdateUsers(TeamType teamType) {
+    return String.format(
+        "Team is of type %s. Users can be updated only in team of type Group.", teamType);
+  }
+
   public static String invalidOwnerType(String entityType) {
     return String.format(
         "Entity of type %s can't be the owner. Only Team of type Group or a User can own entities.",
         entityType);
+  }
+
+  public static String onlyOneTeamAllowed() {
+    return "Only One Team is allowed to own Data Assets.";
+  }
+
+  public static String noTeamAndUserComboAllowed() {
+    return "Data Assets can have up to 5 users or a Team but not both as owners.";
   }
 
   public static String failedToParse(String message) {
@@ -282,6 +334,11 @@ public final class CatalogExceptionMessage {
         tag1.getTagFQN(), tag2.getTagFQN());
   }
 
+  public static String disabledTag(TagLabel tag) {
+    return String.format(
+        "Tag label %s is disabled and can't be assigned to a data asset.", tag.getTagFQN());
+  }
+
   public static String csvNotSupported(String entityType) {
     return String.format(
         "Upload/download CSV for bulk operations is not supported for entity [%s]", entityType);
@@ -303,6 +360,12 @@ public final class CatalogExceptionMessage {
         JsonUtils.pojoToJson(event), type.value(), message);
   }
 
+  public static String eventPublisherFailedToPublish(
+      SubscriptionDestination.SubscriptionType type, String message) {
+    return String.format(
+        "Failed to publish event of destination type %s due to %s ", type.value(), message);
+  }
+
   public static String invalidTaskField(EntityLink entityLink, TaskType taskType) {
     return String.format(
         "The Entity link with no field name - %s is not supported for %s task.",
@@ -311,6 +374,10 @@ public final class CatalogExceptionMessage {
 
   public static String invalidFieldForTask(String fieldName, TaskType type) {
     return String.format("The field name %s is not supported for %s task.", fieldName, type);
+  }
+
+  public static String invalidReviewerType(String type) {
+    return String.format("Reviewers can only be a Team or User. Given Reviewer Type : %s", type);
   }
 
   public static String invalidEnumValue(Class<? extends Enum<?>> enumClass) {
@@ -327,5 +394,10 @@ public final class CatalogExceptionMessage {
             .map(Object::toString)
             .collect(Collectors.joining(", "));
     return "query param " + key + " must be one of [" + enumValues + "]";
+  }
+
+  public static String duplicateGlossaryTerm(String termName, String glossaryName) {
+    return String.format(
+        "A term with the name '%s' already exists in '%s' glossary.", termName, glossaryName);
   }
 }

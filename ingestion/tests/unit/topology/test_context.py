@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -33,8 +33,11 @@ from metadata.generated.schema.entity.data.table import (
     DataType,
     Table,
 )
-from metadata.generated.schema.entity.type import EntityName
-from metadata.generated.schema.type.basic import FullyQualifiedEntityName, Markdown
+from metadata.generated.schema.type.basic import (
+    EntityName,
+    FullyQualifiedEntityName,
+    Markdown,
+)
 from metadata.ingestion.models.ometa_classification import OMetaTagAndClassification
 from metadata.ingestion.models.topology import NodeStage, TopologyContext
 from metadata.ingestion.source.database.database_service import DatabaseServiceTopology
@@ -126,12 +129,12 @@ class TopologyContextTest(TestCase):
         classification_and_tag = OMetaTagAndClassification(
             fqn=None,
             classification_request=CreateClassificationRequest(
-                name="my_classification",
-                description=Markdown(__root__="something"),
+                name=EntityName("my_classification"),
+                description=Markdown("something"),
             ),
             tag_request=CreateTagRequest(
-                name="my_tag",
-                description=Markdown(__root__="something"),
+                name=EntityName("my_tag"),
+                description=Markdown("something"),
             ),
         )
 
@@ -146,11 +149,9 @@ class TopologyContextTest(TestCase):
         context.update_context_name(
             stage=TABLE_STAGE,
             right=CreateTableRequest(
-                name=EntityName(__root__="table"),
-                databaseSchema=FullyQualifiedEntityName(__root__="schema"),
-                columns=[
-                    Column(name=ColumnName(__root__="id"), dataType=DataType.BIGINT)
-                ],
+                name=EntityName("table"),
+                databaseSchema=FullyQualifiedEntityName("schema"),
+                columns=[Column(name=ColumnName("id"), dataType=DataType.BIGINT)],
             ),
         )
 
@@ -162,8 +163,8 @@ class TopologyContextTest(TestCase):
         context.update_context_name(
             stage=PROCEDURES_STAGE,
             right=CreateStoredProcedureRequest(
-                name=EntityName(__root__="stored_proc"),
-                databaseSchema=FullyQualifiedEntityName(__root__="schema"),
+                name=EntityName("stored_proc"),
+                databaseSchema=FullyQualifiedEntityName("schema"),
                 storedProcedureCode=StoredProcedureCode(
                     language=Language.SQL,
                     code="SELECT * FROM AWESOME",

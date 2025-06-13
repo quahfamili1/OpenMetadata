@@ -34,9 +34,10 @@
       },
       "default": null
     },
-    "owner": {
-      "description": "Owner of this messaging service.",
-      "$ref": "../../type/entityReference.json"
+    "owners": {
+      "description": "Owners of this messaging service.",
+      "$ref": "../../type/entityReferenceList.json",
+      "default": null
     },
     "dataProducts" : {
       "description": "List of fully qualified names of data products this entity is part of.",
@@ -48,6 +49,10 @@
     "domain" : {
       "description": "Fully qualified name of the domain the Messaging Service belongs to.",
       "type": "string"
+    },
+    "ingestionRunner" : {
+      "description": "The ingestion agent responsible for executing the ingestion pipeline.",
+      "$ref": "../../type/entityReference.json"
     }
   },
   "required": ["name", "serviceType"],

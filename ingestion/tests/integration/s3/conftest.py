@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,12 +17,11 @@ import pytest
 import yaml
 from minio import Minio
 
+from _openmetadata_testutils.ometa import OM_JWT, int_admin_ometa
 from metadata.generated.schema.entity.services.storageService import StorageService
 from metadata.workflow.metadata import MetadataWorkflow
-from metadata.workflow.workflow_output_handler import print_status
 
 from ..containers import MinioContainerConfigs, get_minio_container
-from ..integration_base import OM_JWT, int_admin_ometa
 
 RESOURCES_DIR = Path(__file__).parent / "resources"
 
@@ -101,6 +100,7 @@ def ingest_s3_storage(minio, metadata, service_name, create_data):
           type: metadata-rest
           config: {{}}
         workflowConfig:
+          loggerLevel: DEBUG
           openMetadataServerConfig:
             hostPort: http://localhost:8585/api
             authProvider: openmetadata
@@ -111,7 +111,7 @@ def ingest_s3_storage(minio, metadata, service_name, create_data):
     workflow = MetadataWorkflow.create(yaml.safe_load(config))
     workflow.execute()
     workflow.raise_from_status()
-    print_status(workflow)
+    workflow.print_status()
     workflow.stop()
 
     yield

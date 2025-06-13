@@ -131,11 +131,15 @@ jest.mock('../../context/PermissionProvider/PermissionProvider', () => ({
 }));
 
 jest.mock(
-  '../../components/common/RichTextEditor/RichTextEditorPreviewer',
+  '../../components/common/RichTextEditor/RichTextEditorPreviewerV1',
   () => {
     return jest.fn().mockImplementation(({ markdown }) => <p>{markdown}</p>);
   }
 );
+
+jest.mock('../../hooks/useCustomLocation/useCustomLocation', () => {
+  return jest.fn().mockImplementation(() => ({ search: '?schema=sales' }));
+});
 
 jest.mock('react-router-dom', () => ({
   Link: jest
@@ -143,13 +147,13 @@ jest.mock('react-router-dom', () => ({
     .mockImplementation(({ children }: { children: React.ReactNode }) => (
       <p data-testid="link">{children}</p>
     )),
-  useHistory: jest.fn(),
+  useHistory: () => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+  }),
   useParams: jest.fn().mockReturnValue({
     fqn: 'bigquery.shopify',
   }),
-  useLocation: jest
-    .fn()
-    .mockImplementation(() => ({ search: '?schema=sales' })),
 }));
 
 jest.mock(
@@ -288,7 +292,7 @@ describe('Test DatabaseDetails page', () => {
     );
 
     expect(getDatabaseDetailsByFQN).toHaveBeenCalledWith('bigquery.shopify', {
-      fields: 'owner,tags,domain,votes,extension,dataProducts',
+      fields: 'owners,tags,domain,votes,extension,dataProducts,followers',
       include: 'all',
     });
     expect(entityHeader).toBeInTheDocument();

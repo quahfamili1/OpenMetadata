@@ -10,8 +10,10 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+import { CheckOutlined } from '@ant-design/icons';
 import Icon from '@ant-design/icons/lib/components/Icon';
-import { Button, Checkbox, List, Space, Tooltip } from 'antd';
+import { Button, List, Space, Tooltip } from 'antd';
+import classNames from 'classnames';
 import { cloneDeep, isEmpty } from 'lodash';
 import VirtualList from 'rc-virtual-list';
 import React, { UIEventHandler, useCallback, useEffect, useState } from 'react';
@@ -67,18 +69,21 @@ export const SelectableList = ({
   selectedItems,
   onUpdate,
   onCancel,
+  onChange,
   searchPlaceholder,
   customTagRenderer,
   searchBarDataTestId,
   removeIconTooltipLabel,
   emptyPlaceholderText,
+  height = ADD_USER_CONTAINER_HEIGHT,
 }: SelectableListProps) => {
+  const [listOptions, setListOptions] = useState<EntityReference[]>([]);
   const [uniqueOptions, setUniqueOptions] = useState<EntityReference[]>([]);
   const [searchText, setSearchText] = useState('');
   const { t } = useTranslation();
   const [pagingInfo, setPagingInfo] = useState<Paging>(pagingObject);
 
-  const [selectedItemsInternal, setSelectedItemInternal] = useState<
+  const [selectedItemsInternal, setSelectedItemsInternal] = useState<
     Map<string, EntityReference>
   >(() => {
     const selectedItemMap = new Map();
@@ -92,15 +97,22 @@ export const SelectableList = ({
   const [fetchOptionFailed, setFetchOptionFailed] = useState(false);
   const [updating, setUpdating] = useState(false);
 
+  const checkActiveSelectedItem = (item: EntityReference) => {
+    return (
+      selectedItemsInternal.has(item.id) ||
+      selectedItemsInternal.has(item.name ?? '') // Name in case of Bulk Action, since we are using the name as the id
+    );
+  };
+
   useEffect(() => {
-    setSelectedItemInternal(() => {
+    setSelectedItemsInternal(() => {
       const selectedItemMap = new Map();
 
       selectedItems.forEach((item) => selectedItemMap.set(item.id, item));
 
       return selectedItemMap;
     });
-  }, [setSelectedItemInternal, selectedItems]);
+  }, [selectedItems]);
 
   const sortUniqueListFromSelectedList = useCallback(
     (items: Map<string, EntityReference>, listOptions: EntityReference[]) => {
@@ -110,7 +122,7 @@ export const SelectableList = ({
 
       return [
         ...items.values(),
-        ...listOptions.filter((option) => !items.has(option.id)),
+        ...listOptions.filter((option) => !checkActiveSelectedItem(option)),
       ];
     },
     [selectedItemsInternal]
@@ -121,12 +133,10 @@ export const SelectableList = ({
     try {
       const { data, paging } = await fetchOptions('');
 
-      setUniqueOptions(
-        sortUniqueListFromSelectedList(selectedItemsInternal, data)
-      );
+      setListOptions(data);
       setPagingInfo(paging);
       fetchOptionFailed && setFetchOptionFailed(false);
-    } catch (error) {
+    } catch {
       setFetchOptionFailed(true);
     } finally {
       setFetching(false);
@@ -136,6 +146,12 @@ export const SelectableList = ({
   useEffect(() => {
     fetchListOptions();
   }, []);
+
+  useEffect(() => {
+    setUniqueOptions(
+      sortUniqueListFromSelectedList(selectedItemsInternal, listOptions)
+    );
+  }, [listOptions]);
 
   const handleSearch = useCallback(
     async (search: string) => {
@@ -157,8 +173,7 @@ export const SelectableList = ({
     async (e) => {
       if (
         // If user reachs to end of container fetch more options
-        e.currentTarget.scrollHeight - e.currentTarget.scrollTop ===
-          ADD_USER_CONTAINER_HEIGHT &&
+        e.currentTarget.scrollHeight - e.currentTarget.scrollTop === height &&
         // If there are other options available which can be determine form the cursor value
         pagingInfo.after &&
         // If we have all the options already we don't need to fetch more
@@ -179,15 +194,18 @@ export const SelectableList = ({
   const handleUpdate = useCallback(
     async (updateItems: EntityReference[]) => {
       setUpdating(true);
-      await onUpdate(updateItems);
-      setUpdating(false);
+      try {
+        await onUpdate?.(updateItems);
+      } finally {
+        setUpdating(false);
+      }
     },
     [setUpdating, onUpdate]
   );
 
   const selectionHandler = (item: EntityReference) => {
     if (multiSelect) {
-      setSelectedItemInternal((itemsMap) => {
+      setSelectedItemsInternal((itemsMap) => {
         const id = item.id;
         const newItemsMap = cloneDeep(itemsMap);
         if (newItemsMap.has(id)) {
@@ -195,6 +213,10 @@ export const SelectableList = ({
         } else {
           newItemsMap?.set(id, item);
         }
+
+        const newSelectedItems = [...newItemsMap.values()];
+        // Call onChange with the new selected items
+        onChange?.(newSelectedItems);
 
         return newItemsMap;
       });
@@ -212,7 +234,8 @@ export const SelectableList = ({
   }, [handleUpdate]);
 
   const handleClearAllClick = () => {
-    setSelectedItemInternal(new Map());
+    setSelectedItemsInternal(new Map());
+    onChange?.([]);
   };
 
   return (
@@ -223,6 +246,7 @@ export const SelectableList = ({
         multiSelect && (
           <div className="d-flex justify-between">
             <Button
+              className="p-0"
               color="primary"
               data-testid="clear-all-button"
               size="small"
@@ -270,18 +294,26 @@ export const SelectableList = ({
       size="small">
       {uniqueOptions.length > 0 && (
         <VirtualList
+          className="selectable-list-virtual-list"
           data={uniqueOptions}
-          height={ADD_USER_CONTAINER_HEIGHT}
+          height={height}
+          itemHeight={40}
           itemKey="id"
           onScroll={onScroll}>
           {(item) => (
             <List.Item
-              className="selectable-list-item cursor-pointer"
+              className={classNames('selectable-list-item', 'cursor-pointer', {
+                active: checkActiveSelectedItem(item),
+              })}
               extra={
                 multiSelect ? (
-                  <Checkbox checked={selectedItemsInternal.has(item.id)} />
+                  <CheckOutlined
+                    className={classNames('selectable-list-item-checkmark', {
+                      active: checkActiveSelectedItem(item),
+                    })}
+                  />
                 ) : (
-                  selectedItemsInternal.has(item.id) && (
+                  checkActiveSelectedItem(item) && (
                     <RemoveIcon
                       removeIconTooltipLabel={removeIconTooltipLabel}
                       removeOwner={handleRemoveClick}
@@ -300,7 +332,11 @@ export const SelectableList = ({
               {customTagRenderer ? (
                 customTagRenderer(item)
               ) : (
-                <UserTag id={item.name ?? ''} name={getEntityName(item)} />
+                <UserTag
+                  avatarType="outlined"
+                  id={item.name ?? ''}
+                  name={getEntityName(item)}
+                />
               )}
             </List.Item>
           )}

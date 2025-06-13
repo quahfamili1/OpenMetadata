@@ -18,21 +18,20 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { ReactComponent as MyDataEmptyIcon } from '../../../assets/svg/my-data-no-data-placeholder.svg';
 import {
-  getUserPath,
   INITIAL_PAGING_VALUE,
   PAGE_SIZE,
   ROUTES,
 } from '../../../constants/constants';
 import { ERROR_PLACEHOLDER_TYPE, SIZE } from '../../../enums/common.enum';
 import { SearchIndex } from '../../../enums/search.enum';
+import { useApplicationStore } from '../../../hooks/useApplicationStore';
 import { WidgetCommonProps } from '../../../pages/CustomizablePage/CustomizablePage.interface';
 import { searchData } from '../../../rest/miscAPI';
 import { Transi18next } from '../../../utils/CommonUtils';
 import entityUtilClassBase from '../../../utils/EntityUtilClassBase';
 import { getEntityName } from '../../../utils/EntityUtils';
-import { getEntityIcon } from '../../../utils/TableUtils';
-
-import { useApplicationStore } from '../../../hooks/useApplicationStore';
+import { getUserPath } from '../../../utils/RouterUtils';
+import searchClassBase from '../../../utils/SearchClassBase';
 import ErrorPlaceHolder from '../../common/ErrorWithPlaceholder/ErrorPlaceHolder';
 import EntityListSkeleton from '../../common/Skeleton/MyData/EntityListSkeleton/EntityListSkeleton.component';
 import { SourceType } from '../../SearchedData/SearchedData.interface';
@@ -55,8 +54,8 @@ const MyDataWidgetInternal = ({
       try {
         const teamsIds = (currentUser.teams ?? []).map((team) => team.id);
         const mergedIds = [
-          ...teamsIds.map((id) => `owner.id:${id}`),
-          `owner.id:${currentUser.id}`,
+          ...teamsIds.map((id) => `owners.id:${id}`),
+          `owners.id:${currentUser.id}`,
         ].join(' OR ');
 
         const queryFilter = `(${mergedIds})`;
@@ -76,7 +75,7 @@ const MyDataWidgetInternal = ({
 
         setData(ownedAssets.map((hit) => hit._source).slice(0, 8));
         setTotalOwnedAssetsCount(totalOwnedAssets);
-      } catch (err) {
+      } catch {
         setData([]);
       } finally {
         setIsLoading(false);
@@ -140,6 +139,7 @@ const MyDataWidgetInternal = ({
         {isEmpty(data) ? (
           <div className="flex-center h-full">
             <ErrorPlaceHolder
+              className="border-none"
               icon={
                 <MyDataEmptyIcon height={SIZE.X_SMALL} width={SIZE.X_SMALL} />
               }
@@ -164,7 +164,6 @@ const MyDataWidgetInternal = ({
                   key={item.id}>
                   <div className="d-flex items-center">
                     <Link
-                      className=""
                       to={entityUtilClassBase.getEntityLink(
                         item.entityType ?? '',
                         item.fullyQualifiedName as string
@@ -173,7 +172,9 @@ const MyDataWidgetInternal = ({
                         className="entity-button flex-center p-0 m--ml-1"
                         icon={
                           <div className="entity-button-icon m-r-xs">
-                            {getEntityIcon(item.entityType ?? '')}
+                            {searchClassBase.getEntityIcon(
+                              item.entityType ?? ''
+                            )}
                           </div>
                         }
                         type="text">

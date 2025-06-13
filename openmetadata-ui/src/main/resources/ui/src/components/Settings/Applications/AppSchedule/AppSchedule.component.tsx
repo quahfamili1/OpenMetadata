@@ -10,7 +10,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-import { Button, Col, Divider, Modal, Row, Space, Typography } from 'antd';
+import { Button, Col, Modal, Row, Space, Typography } from 'antd';
 import cronstrue from 'cronstrue';
 import { isEmpty } from 'lodash';
 import React, {
@@ -21,14 +21,18 @@ import React, {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLimitStore } from '../../../../context/LimitsProvider/useLimitsStore';
 import {
   AppScheduleClass,
   AppType,
+  ScheduleType,
 } from '../../../../generated/entity/applications/app';
 import { getIngestionPipelineByFqn } from '../../../../rest/ingestionPipelineAPI';
+import { getCronDefaultValue } from '../../../../utils/SchedularUtils';
 import Loader from '../../../common/Loader/Loader';
-import { TestSuiteIngestionDataType } from '../../../DataQuality/AddDataQualityTest/AddDataQualityTest.interface';
-import TestSuiteScheduler from '../../../DataQuality/AddDataQualityTest/components/TestSuiteScheduler';
+import ScheduleInterval from '../../Services/AddIngestion/Steps/ScheduleInterval';
+import { WorkflowExtraConfig } from '../../Services/AddIngestion/Steps/ScheduleInterval.interface';
+import applicationsClassBase from '../AppDetails/ApplicationsClassBase';
 import AppRunsHistory from '../AppRunsHistory/AppRunsHistory.component';
 import { AppRunsHistoryRef } from '../AppRunsHistory/AppRunsHistory.interface';
 import { AppScheduleProps } from './AppScheduleProps.interface';
@@ -36,6 +40,7 @@ import { AppScheduleProps } from './AppScheduleProps.interface';
 const AppSchedule = ({
   appData,
   loading: { isRunLoading, isDeployLoading },
+  jsonSchema,
   onSave,
   onDemandTrigger,
   onDeployTrigger,
@@ -46,6 +51,18 @@ const AppSchedule = ({
   const [isPipelineDeployed, setIsPipelineDeployed] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaveLoading, setIsSaveLoading] = useState(false);
+  const { config } = useLimitStore();
+
+  const showRunNowButton = useMemo(() => {
+    return [ScheduleType.ScheduledOrManual, ScheduleType.OnlyManual].includes(
+      appData?.scheduleType
+    );
+  }, [appData]);
+
+  const { pipelineSchedules } =
+    config?.limits?.config.featureLimits.find(
+      (feature) => feature.name === 'app'
+    ) ?? {};
 
   const fetchPipelineDetails = useCallback(async () => {
     setIsLoading(true);
@@ -85,16 +102,20 @@ const AppSchedule = ({
     setShowModal(false);
   };
 
-  const onDialogSave = async (data: TestSuiteIngestionDataType) => {
+  const onDialogSave = async (data: WorkflowExtraConfig) => {
     setIsSaveLoading(true);
-    await onSave(data.repeatFrequency);
+    await onSave(data.cron ?? '');
     setIsSaveLoading(false);
     setShowModal(false);
   };
 
   const onAppTrigger = async () => {
     await onDemandTrigger();
-    appRunsHistoryRef.current?.refreshAppHistory();
+
+    // Refresh the app history after 750ms to get the latest run as the run is triggered asynchronously
+    setTimeout(() => {
+      appRunsHistoryRef.current?.refreshAppHistory();
+    }, 750);
   };
 
   const appRunHistory = useMemo(() => {
@@ -105,6 +126,7 @@ const AppSchedule = ({
       return (
         <AppRunsHistory
           appData={appData}
+          jsonSchema={jsonSchema}
           maxRecords={1}
           ref={appRunsHistoryRef}
           showPagination={false}
@@ -127,15 +149,19 @@ const AppSchedule = ({
     );
   }, [appData, isPipelineDeployed, appRunsHistoryRef]);
 
-  const initialOptions = useMemo(() => {
-    if (appData.name === 'DataInsightsReportApplication') {
-      return ['Week'];
-    } else if (appData.appType === AppType.External) {
-      return ['Day'];
-    }
-
-    return undefined;
-  }, [appData.name, appData.appType]);
+  const { initialOptions, initialData, defaultCron } = useMemo(() => {
+    return {
+      initialOptions: applicationsClassBase.getScheduleOptionsForApp(
+        appData.name,
+        appData.appType,
+        pipelineSchedules
+      ),
+      initialData: {
+        cron: (appData.appSchedule as AppScheduleClass)?.cronExpression,
+      },
+      defaultCron: getCronDefaultValue(appData?.name ?? ''),
+    };
+  }, [appData.name, appData.appType, appData.appSchedule, pipelineSchedules]);
 
   useEffect(() => {
     fetchPipelineDetails();
@@ -155,7 +181,9 @@ const AppSchedule = ({
                 <Typography.Text className="right-panel-label">
                   {t('label.schedule-type')}
                 </Typography.Text>
-                <Typography.Text className="font-medium">
+                <Typography.Text
+                  className="font-medium"
+                  data-testid="schedule-type">
                   {(appData.appSchedule as AppScheduleClass).scheduleTimeline ??
                     ''}
                 </Typography.Text>
@@ -190,29 +218,33 @@ const AppSchedule = ({
                 </Button>
               )}
 
-              <Button
-                data-testid="edit-button"
-                disabled={appData.deleted}
-                type="primary"
-                onClick={() => setShowModal(true)}>
-                {t('label.edit')}
-              </Button>
+              {!appData.system && (
+                <Button
+                  data-testid="edit-button"
+                  disabled={appData.deleted}
+                  type="primary"
+                  onClick={() => setShowModal(true)}>
+                  {t('label.edit')}
+                </Button>
+              )}
 
-              <Button
-                data-testid="run-now-button"
-                disabled={appData.deleted}
-                loading={isRunLoading}
-                type="primary"
-                onClick={onAppTrigger}>
-                {t('label.run-now')}
-              </Button>
+              {showRunNowButton && (
+                <Button
+                  data-testid="run-now-button"
+                  disabled={appData.deleted}
+                  loading={isRunLoading}
+                  type="primary"
+                  onClick={onAppTrigger}>
+                  {t('label.run-now')}
+                </Button>
+              )}
             </Space>
           </Col>
         )}
 
-        <Divider />
-
-        <Col span={24}>{appRunHistory}</Col>
+        <Col className="mt-4" span={24}>
+          {appRunHistory}
+        </Col>
       </Row>
       <Modal
         destroyOnClose
@@ -223,20 +255,20 @@ const AppSchedule = ({
         maskClosable={false}
         okText={t('label.save')}
         open={showModal}
-        title={t('label.update-entity', { entity: t('label.schedule') })}>
-        <TestSuiteScheduler
+        title={t('label.update-entity', { entity: t('label.schedule') })}
+        width={650}>
+        <ScheduleInterval
+          isEditMode
           buttonProps={{
             cancelText: t('label.cancel'),
             okText: t('label.save'),
           }}
+          defaultSchedule={defaultCron}
           includePeriodOptions={initialOptions}
-          initialData={{
-            repeatFrequency: (appData.appSchedule as AppScheduleClass)
-              ?.cronExpression,
-          }}
-          isLoading={isSaveLoading}
-          onCancel={onDialogCancel}
-          onSubmit={onDialogSave}
+          initialData={initialData}
+          status={isSaveLoading ? 'waiting' : 'initial'}
+          onBack={onDialogCancel}
+          onDeploy={onDialogSave}
         />
       </Modal>
     </>

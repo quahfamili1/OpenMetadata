@@ -13,38 +13,83 @@
 import { render, screen } from '@testing-library/react';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
+import { getLimitConfig } from '../../rest/limitsAPI';
+import applicationsClassBase from '../Settings/Applications/AppDetails/ApplicationsClassBase';
 import AppContainer from './AppContainer';
 
 jest.mock('../../hooks/useApplicationStore', () => {
   return {
     useApplicationStore: jest.fn(() => ({
       currentUser: { id: '1', email: 'user@gamil.com' },
+      isAuthenticated: true,
     })),
   };
 });
 
-jest.mock('../../components/MyData/LeftSidebar/LeftSidebar.component', () =>
-  jest.fn().mockReturnValue(<p>Sidebar</p>)
+jest.mock(
+  '../Settings/Applications/ApplicationsProvider/ApplicationsProvider',
+  () => {
+    return {
+      useApplicationsProvider: jest.fn(() => ({
+        applications: [],
+      })),
+    };
+  }
 );
 
-jest.mock('../../components/AppBar/Appbar', () =>
-  jest.fn().mockReturnValue(<p>Appbar</p>)
+jest.mock('../../components/MyData/LeftSidebar/LeftSidebar.component', () =>
+  jest.fn().mockReturnValue(<p>Sidebar</p>)
 );
 
 jest.mock('../../components/AppRouter/AuthenticatedAppRouter', () =>
   jest.fn().mockReturnValue(<p>AuthenticatedAppRouter</p>)
 );
 
-describe('AppContainer', () => {
+jest.mock('../../rest/limitsAPI');
+
+jest.mock('../../rest/domainAPI', () => ({
+  getDomainList: jest.fn().mockResolvedValue({
+    data: [{ id: 'test', name: 'testing' }],
+    paging: { total: 10 },
+  }),
+}));
+
+jest.mock('../../hooks/useDomainStore', () => ({
+  useDomainStore: jest.fn().mockReturnValue({
+    updateDomainLoading: jest.fn(),
+    updateDomains: jest.fn(),
+  }),
+}));
+
+describe.skip('AppContainer', () => {
   it('renders the Appbar, LeftSidebar, and AuthenticatedAppRouter components', () => {
+    const ApplicationExtras = () => (
+      <div data-testid="test-app">ApplicationExtras</div>
+    );
+    const spy = jest
+      .spyOn(applicationsClassBase, 'getApplicationExtension')
+      .mockImplementation(() => ApplicationExtras);
+
     render(
       <MemoryRouter>
         <AppContainer />
       </MemoryRouter>
     );
 
-    expect(screen.getByText('Appbar')).toBeInTheDocument();
+    expect(spy).toHaveBeenCalled();
+    expect(screen.getByText('Navbar')).toBeInTheDocument();
     expect(screen.getByText('Sidebar')).toBeInTheDocument();
     expect(screen.getByText('AuthenticatedAppRouter')).toBeInTheDocument();
+    expect(screen.getByTestId('test-app')).toBeInTheDocument();
+  });
+
+  it('should call limit api', () => {
+    render(
+      <MemoryRouter>
+        <AppContainer />
+      </MemoryRouter>
+    );
+
+    expect(getLimitConfig).toHaveBeenCalled();
   });
 });

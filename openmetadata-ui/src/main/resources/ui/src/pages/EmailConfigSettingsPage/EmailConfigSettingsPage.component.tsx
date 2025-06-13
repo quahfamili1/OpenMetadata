@@ -27,6 +27,7 @@ import PageHeader from '../../components/PageHeader/PageHeader.component';
 import PageLayoutV1 from '../../components/PageLayoutV1/PageLayoutV1';
 import TestEmail from '../../components/Settings/Email/TestEmail/TestEmail.component';
 import { ROUTES } from '../../constants/constants';
+import { NOT_INCLUDE_EMAIL_CONFIG_VALUE } from '../../constants/EmailConfig.constants';
 import { GlobalSettingsMenuCategory } from '../../constants/GlobalSettings.constants';
 import { ERROR_PLACEHOLDER_TYPE } from '../../enums/common.enum';
 import { SMTPSettings } from '../../generated/email/smtpSettings';
@@ -90,32 +91,34 @@ function EmailConfigSettingsPage() {
 
     const emailConfigFieldsArray = Object.keys(emailConfigValues).sort();
 
-    return emailConfigFieldsArray.map((configValue) => {
-      const title = getEmailConfigFieldLabels(configValue);
-      const emailConfigValue =
-        emailConfigValues[configValue as keyof SMTPSettings];
-      const displayValue =
-        isBoolean(emailConfigValue) || isNumber(emailConfigValue)
-          ? `${emailConfigValue}`
-          : emailConfigValue;
+    return emailConfigFieldsArray
+      .filter((value) => !NOT_INCLUDE_EMAIL_CONFIG_VALUE.includes(value))
+      .map((configValue) => {
+        const title = getEmailConfigFieldLabels(configValue);
+        const emailConfigValue =
+          emailConfigValues[configValue as keyof SMTPSettings];
+        const displayValue =
+          isBoolean(emailConfigValue) || isNumber(emailConfigValue)
+            ? `${emailConfigValue}`
+            : emailConfigValue;
 
-      return (
-        <Col key={title} span={12}>
-          <Row align="middle">
-            <Col span={24}>
-              <Typography.Text className="m-0 text-grey-muted">
-                {`${title}:`}
-              </Typography.Text>
-            </Col>
-            <Col span={24}>
-              <Typography.Text className="">
-                {isEmpty(displayValue) ? '--' : displayValue}
-              </Typography.Text>
-            </Col>
-          </Row>
-        </Col>
-      );
-    });
+        return (
+          <Col key={title} span={12}>
+            <Row align="middle">
+              <Col span={24}>
+                <Typography.Text className="m-0 text-grey-muted">
+                  {`${title}:`}
+                </Typography.Text>
+              </Col>
+              <Col span={24}>
+                <Typography.Text className="">
+                  {isEmpty(displayValue) ? '--' : displayValue}
+                </Typography.Text>
+              </Col>
+            </Row>
+          </Col>
+        );
+      });
   }, [emailConfigValues]);
 
   const configValuesContainer = useMemo(() => {
@@ -124,6 +127,9 @@ function EmailConfigSettingsPage() {
         <ErrorPlaceHolder
           className="mt-24"
           heading={t('label.email-configuration-lowercase')}
+          permissionValue={t('label.create-entity', {
+            entity: t('label.email-configuration'),
+          })}
           type={ERROR_PLACEHOLDER_TYPE.CREATE}
         />
       );
@@ -134,11 +140,9 @@ function EmailConfigSettingsPage() {
         {loading ? (
           <Skeleton title paragraph={{ rows: 8 }} />
         ) : (
-          <>
-            <Row align="middle" gutter={[16, 16]}>
-              {configValues}
-            </Row>
-          </>
+          <Row align="middle" gutter={[16, 16]}>
+            {configValues}
+          </Row>
         )}
       </>
     );
@@ -149,8 +153,11 @@ function EmailConfigSettingsPage() {
   }, []);
 
   return (
-    <PageLayoutV1 pageTitle={t('label.email')}>
-      <Row align="middle" className="page-container" gutter={[0, 16]}>
+    <PageLayoutV1 pageTitle={t('label.email-configuration')}>
+      <Row
+        align="middle"
+        className="p-lg bg-white border-radius-sm"
+        gutter={[0, 16]}>
         <Col span={24}>
           <TitleBreadcrumb titleLinks={breadcrumbs} />
         </Col>

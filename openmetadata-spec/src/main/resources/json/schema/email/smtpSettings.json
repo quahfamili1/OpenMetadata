@@ -21,10 +21,6 @@
       "type": "boolean",
       "default": false
     },
-    "openMetadataUrl": {
-      "description": "Openmetadata Server Endpoint",
-      "type": "string"
-    },
     "senderMail": {
       "description": "Mail of the sender",
       "type": "string"
@@ -49,8 +45,15 @@
       "type": "string",
       "enum": ["SMTP", "SMTPS", "SMTP_TLS"],
       "default": "SMTP"
+    },
+    "templatePath": {
+      "type": "string"
+    },
+    "templates": {
+      "type": "string",
+      "enum": ["openmetadata", "collate"],
+      "default": "openmetadata"
     }
   },
-  "additionalProperties": false,
-  "required": ["serverEndpoint", "serverPort", "senderMail", "openMetadataUrl"]
+  "additionalProperties": false
 }

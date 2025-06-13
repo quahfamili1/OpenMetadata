@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,7 +16,7 @@ supporting sqlalchemy abstraction layer
 """
 import traceback
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Dict, List, Optional, Type
 
 from sqlalchemy import Column
@@ -30,7 +30,6 @@ from metadata.profiler.interface.profiler_interface import ProfilerInterface
 from metadata.profiler.metrics.core import Metric, MetricTypes
 from metadata.profiler.metrics.registry import Metrics
 from metadata.profiler.processor.metric_filter import MetricFilter
-from metadata.profiler.processor.sampler.nosql.sampler import NoSQLSampler
 from metadata.utils.logger import profiler_interface_registry_logger
 from metadata.utils.sqa_like_column import SQALikeColumn
 
@@ -44,10 +43,6 @@ class NoSQLProfilerInterface(ProfilerInterface):
     """
 
     # pylint: disable=too-many-arguments
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.sampler = self._get_sampler()
 
     def _compute_table_metrics(
         self,
@@ -148,41 +143,21 @@ class NoSQLProfilerInterface(ProfilerInterface):
             row = None
         if metric_func.column is not None:
             column = metric_func.column.name
-            self.status.scanned(f"{metric_func.table.name.__root__}.{column}")
+            self.status.scanned(f"{metric_func.table.name.root}.{column}")
         else:
-            self.status.scanned(metric_func.table.name.__root__)
+            self.status.scanned(metric_func.table.name.root)
             column = None
         return row, column, metric_func.metric_type.value
 
     def fetch_sample_data(self, table, columns: List[SQALikeColumn]) -> TableData:
         return self.sampler.fetch_sample_data(columns)
 
-    def _get_sampler(self) -> NoSQLSampler:
-        """Get NoSQL sampler from config"""
-        from metadata.profiler.processor.sampler.sampler_factory import (  # pylint: disable=import-outside-toplevel
-            sampler_factory_,
-        )
-
-        return sampler_factory_.create(
-            self.service_connection_config.__class__.__name__,
-            table=self.table,
-            client=factory.create(
-                self.service_connection_config.__class__.__name__,
-                client=self.connection,
-            ),
-            profile_sample_config=self.profile_sample_config,
-            partition_details=self.partition_details,
-            profile_sample_query=self.profile_query,
-        )
-
     def get_composed_metrics(
         self, column: Column, metric: Metrics, column_results: Dict
     ):
         return None
 
-    def get_hybrid_metrics(
-        self, column: Column, metric: Metrics, column_results: Dict, **kwargs
-    ):
+    def get_hybrid_metrics(self, column: Column, metric: Metrics, column_results: Dict):
         return None
 
     def get_all_metrics(
@@ -212,9 +187,7 @@ class NoSQLProfilerInterface(ProfilerInterface):
                     profile_results["columns"][column].update(
                         {
                             "name": column,
-                            "timestamp": int(
-                                datetime.now(tz=timezone.utc).timestamp() * 1000
-                            ),
+                            "timestamp": int(datetime.now().timestamp() * 1000),
                             **profile,
                         }
                     )
@@ -227,8 +200,7 @@ class NoSQLProfilerInterface(ProfilerInterface):
 
     def get_columns(self) -> List[Optional[SQALikeColumn]]:
         return [
-            SQALikeColumn(name=c.name.__root__, type=c.dataType)
-            for c in self.table.columns
+            SQALikeColumn(name=c.name.root, type=c.dataType) for c in self.table.columns
         ]
 
     def close(self):

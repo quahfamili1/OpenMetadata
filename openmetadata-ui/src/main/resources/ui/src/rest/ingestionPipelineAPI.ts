@@ -21,7 +21,6 @@ import {
 import {
   IngestionPipeline,
   PipelineStatus,
-  Type,
 } from '../generated/entity/services/ingestionPipelines/ingestionPipeline';
 import { PipelineServiceClientResponse } from '../generated/entity/services/ingestionPipelines/pipelineServiceClientResponse';
 import { Paging } from '../generated/type/paging';
@@ -59,7 +58,7 @@ export const getIngestionPipelines = async (data: {
   testSuite?: string;
   serviceType?: string;
   limit?: number;
-  applicationType?: Type;
+  applicationType?: PipelineType;
 }) => {
   const {
     arrQueryFields,
@@ -106,10 +105,10 @@ export const deployIngestionPipelineById = (
   return APIClient.post(`/services/ingestionPipelines/deploy/${id}`);
 };
 
-export const enableDisableIngestionPipelineById = (
-  id: string
-): Promise<AxiosResponse> => {
-  return APIClient.post(`/services/ingestionPipelines/toggleIngestion/${id}`);
+export const enableDisableIngestionPipelineById = (id: string) => {
+  return APIClient.post<unknown, AxiosResponse<IngestionPipeline>>(
+    `/services/ingestionPipelines/toggleIngestion/${id}`
+  );
 };
 
 export const deleteIngestionPipelineById = (

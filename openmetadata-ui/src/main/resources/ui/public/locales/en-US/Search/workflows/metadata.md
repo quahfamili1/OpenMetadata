@@ -41,6 +41,30 @@ Set the Ingest Sample Data toggle to control whether to ingest sample data as pa
 $$
 
 $$section
+### Override Metadata $(id="overrideMetadata")
+
+Set the `Override Metadata` toggle to control whether to override the existing metadata in the OpenMetadata server with the metadata fetched from the source.
+
+If the toggle is `enabled`, the metadata fetched from the source will override and replace the existing metadata in the OpenMetadata.
+
+If the toggle is `disabled`, the metadata fetched from the source will not override the existing metadata in the OpenMetadata server. In this case the metadata will only get updated for fields that has no value added in OpenMetadata.
+
+This is applicable for fields like description, tags, owner and displayName
+
+$$
+
+$$section
+### Include Index Template $(id="includeIndexTemplate")
+
+`Include Index Template` toggle to manage the ingestion of index templates metadata from the source.
+
+If the toggle is `enabled`, index templates metadata will be ingested from the source.
+
+If the toggle is `disabled`, index templates metadata will not be ingested from the source.
+
+$$
+
+$$section
 ### Sample Size $(id="sampleSize")
 
 If include sample data is enabled, 10 records will be ingested by default. Using this field you can customize the size of sample data.

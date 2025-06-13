@@ -10,8 +10,9 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+import { SystemChartType } from '../../../enums/DataInsight.enum';
 import { DataInsightChartType } from '../../../generated/dataInsight/dataInsightChartResult';
 
 export interface DataInsightHeaderProps {
-  onScrollToChart: (chartType: DataInsightChartType) => void;
+  onScrollToChart: (chartType: SystemChartType | DataInsightChartType) => void;
 }

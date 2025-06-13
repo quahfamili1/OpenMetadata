@@ -16,15 +16,20 @@ import { TAG_START_WITH } from '../../../constants/Tag.constants';
 import { TagLabel, TagSource } from '../../../generated/type/tagLabel';
 import { HighlightedTagLabel } from '../../Explore/EntitySummaryPanel/SummaryList/SummaryList.interface';
 
+export interface DataTestId {
+  'data-testid'?: string;
+}
+
 export type TagsV1Props = {
   tag: TagLabel | HighlightedTagLabel;
   startWith: TAG_START_WITH;
   showOnlyName?: boolean;
   className?: string;
   isVersionPage?: boolean;
-  tagProps?: TagProps;
+  tagProps?: TagProps & DataTestId;
   disabled?: boolean;
   tooltipOverride?: string;
   tagType?: TagSource;
   size?: SelectProps['size'];
+  isEditTags?: boolean;
 };

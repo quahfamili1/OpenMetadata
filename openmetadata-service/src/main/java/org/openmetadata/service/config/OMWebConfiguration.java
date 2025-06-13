@@ -2,7 +2,11 @@ package org.openmetadata.service.config;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.dropwizard.web.conf.WebConfiguration;
+import lombok.Getter;
+import lombok.Setter;
 
+@Setter
+@Getter
 public class OMWebConfiguration extends WebConfiguration {
 
   @JsonProperty("referrer-policy")
@@ -11,23 +15,9 @@ public class OMWebConfiguration extends WebConfiguration {
   @JsonProperty("permission-policy")
   private PermissionPolicyHeaderFactory permissionPolicyHeaderFactory;
 
-  public OMWebConfiguration() {}
+  @JsonProperty("cache-control")
+  private String cacheControl;
 
-  public ReferrerPolicyHeaderFactory getReferrerPolicyHeaderFactory() {
-    return this.referrerPolicyHeaderFactory;
-  }
-
-  public void setReferrerPolicyHeaderFactory(
-      ReferrerPolicyHeaderFactory referrerPolicyHeaderFactory) {
-    this.referrerPolicyHeaderFactory = referrerPolicyHeaderFactory;
-  }
-
-  public PermissionPolicyHeaderFactory getPermissionPolicyHeaderFactory() {
-    return this.permissionPolicyHeaderFactory;
-  }
-
-  public void setPermissionPolicyHeaderFactory(
-      PermissionPolicyHeaderFactory permissionPolicyHeaderFactory) {
-    this.permissionPolicyHeaderFactory = permissionPolicyHeaderFactory;
-  }
+  @JsonProperty("pragma")
+  private String pragma;
 }

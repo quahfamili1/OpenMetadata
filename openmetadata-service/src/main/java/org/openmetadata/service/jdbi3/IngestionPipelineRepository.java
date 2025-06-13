@@ -16,17 +16,24 @@ package org.openmetadata.service.jdbi3;
 import static org.openmetadata.schema.type.EventType.ENTITY_FIELDS_CHANGED;
 import static org.openmetadata.schema.type.EventType.ENTITY_UPDATED;
 
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriInfo;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriInfo;
 import lombok.Getter;
+import lombok.Setter;
 import org.jdbi.v3.sqlobject.transaction.Transaction;
 import org.json.JSONObject;
 import org.openmetadata.schema.EntityInterface;
+import org.openmetadata.schema.entity.applications.configuration.ApplicationConfig;
 import org.openmetadata.schema.entity.services.ingestionPipelines.AirflowConfig;
 import org.openmetadata.schema.entity.services.ingestionPipelines.IngestionPipeline;
 import org.openmetadata.schema.entity.services.ingestionPipelines.PipelineStatus;
+import org.openmetadata.schema.entity.services.ingestionPipelines.PipelineType;
+import org.openmetadata.schema.metadataIngestion.ApplicationPipeline;
 import org.openmetadata.schema.metadataIngestion.LogLevels;
 import org.openmetadata.schema.services.connections.metadata.OpenMetadataConnection;
 import org.openmetadata.schema.type.ChangeDescription;
@@ -34,7 +41,9 @@ import org.openmetadata.schema.type.ChangeEvent;
 import org.openmetadata.schema.type.EntityReference;
 import org.openmetadata.schema.type.FieldChange;
 import org.openmetadata.schema.type.Include;
-import org.openmetadata.sdk.PipelineServiceClient;
+import org.openmetadata.schema.type.Relationship;
+import org.openmetadata.schema.type.change.ChangeSource;
+import org.openmetadata.sdk.PipelineServiceClientInterface;
 import org.openmetadata.service.Entity;
 import org.openmetadata.service.OpenMetadataApplicationConfig;
 import org.openmetadata.service.resources.services.ingestionpipelines.IngestionPipelineResource;
@@ -48,6 +57,7 @@ import org.openmetadata.service.util.RestUtil;
 import org.openmetadata.service.util.ResultList;
 
 public class IngestionPipelineRepository extends EntityRepository<IngestionPipeline> {
+
   private static final String UPDATE_FIELDS =
       "sourceConfig,airflowConfig,loggerLevel,enabled,deployed";
   private static final String PATCH_FIELDS =
@@ -56,7 +66,7 @@ public class IngestionPipelineRepository extends EntityRepository<IngestionPipel
   private static final String PIPELINE_STATUS_JSON_SCHEMA = "ingestionPipelineStatus";
   private static final String PIPELINE_STATUS_EXTENSION = "ingestionPipeline.pipelineStatus";
   private static final String RUN_ID_EXTENSION_KEY = "runId";
-  private PipelineServiceClient pipelineServiceClient;
+  @Setter private PipelineServiceClientInterface pipelineServiceClient;
 
   @Getter private final OpenMetadataApplicationConfig openMetadataApplicationConfig;
 
@@ -88,6 +98,15 @@ public class IngestionPipelineRepository extends EntityRepository<IngestionPipel
         fields.contains("pipelineStatuses")
             ? getLatestPipelineStatus(ingestionPipeline)
             : ingestionPipeline.getPipelineStatuses());
+
+    if (ingestionPipeline.getSourceConfig() != null
+        && ingestionPipeline.getSourceConfig().getConfig() != null) {
+      JSONObject sourceConfigJson =
+          new JSONObject(JsonUtils.pojoToJson(ingestionPipeline.getSourceConfig().getConfig()));
+      Optional.ofNullable(sourceConfigJson.optJSONObject("appConfig"))
+          .map(appConfig -> appConfig.optString("type", null))
+          .ifPresent(ingestionPipeline::setApplicationType);
+    }
   }
 
   @Override
@@ -137,11 +156,22 @@ public class IngestionPipelineRepository extends EntityRepository<IngestionPipel
   @Override
   public void storeRelationships(IngestionPipeline ingestionPipeline) {
     addServiceRelationship(ingestionPipeline, ingestionPipeline.getService());
+    if (ingestionPipeline.getIngestionRunner() != null) {
+      addRelationship(
+          ingestionPipeline.getId(),
+          ingestionPipeline.getIngestionRunner().getId(),
+          entityType,
+          ingestionPipeline.getIngestionRunner().getType(),
+          Relationship.USES);
+    }
   }
 
   @Override
-  public EntityUpdater getUpdater(
-      IngestionPipeline original, IngestionPipeline updated, Operation operation) {
+  public EntityRepository<IngestionPipeline>.EntityUpdater getUpdater(
+      IngestionPipeline original,
+      IngestionPipeline updated,
+      Operation operation,
+      ChangeSource changeSource) {
     return new IngestionPipelineUpdater(original, updated, operation);
   }
 
@@ -157,14 +187,10 @@ public class IngestionPipelineRepository extends EntityRepository<IngestionPipel
 
   @Override
   public EntityInterface getParentEntity(IngestionPipeline entity, String fields) {
-    return Entity.getEntity(entity.getService(), fields, Include.NON_DELETED);
+    return Entity.getEntity(entity.getService(), fields, Include.ALL);
   }
 
-  public void setPipelineServiceClient(PipelineServiceClient client) {
-    pipelineServiceClient = client;
-  }
-
-  private ChangeEvent getChangeEvent(
+  protected ChangeEvent getChangeEvent(
       EntityInterface updated, ChangeDescription change, String entityType, Double prevVersion) {
     return new ChangeEvent()
         .withId(UUID.randomUUID())
@@ -251,14 +277,53 @@ public class IngestionPipelineRepository extends EntityRepository<IngestionPipel
                 startTs,
                 endTs),
             PipelineStatus.class);
-    List<PipelineStatus> allPipelineStatusList =
-        pipelineServiceClient.getQueuedPipelineStatus(ingestionPipeline);
+    List<PipelineStatus> allPipelineStatusList = new ArrayList<>();
+    if (pipelineServiceClient != null) {
+      allPipelineStatusList = pipelineServiceClient.getQueuedPipelineStatus(ingestionPipeline);
+    }
     allPipelineStatusList.addAll(pipelineStatusList);
     return new ResultList<>(
         allPipelineStatusList,
         String.valueOf(startTs),
         String.valueOf(endTs),
         allPipelineStatusList.size());
+  }
+
+  /* Get the status of the external application by converting the configuration so that it can be
+   * served like an App configuration */
+  public ResultList<PipelineStatus> listExternalAppStatus(
+      String ingestionPipelineFQN, Long startTs, Long endTs) {
+    return listPipelineStatus(ingestionPipelineFQN, startTs, endTs)
+        .map(
+            pipelineStatus ->
+                pipelineStatus.withConfig(
+                    Optional.ofNullable(pipelineStatus.getConfig())
+                        .map(m -> m.getOrDefault("appConfig", null))
+                        .map(JsonUtils::getMap)
+                        .orElse(null)));
+  }
+
+  public ResultList<PipelineStatus> listExternalAppStatus(
+      String ingestionPipelineFQN, String serviceName, Long startTs, Long endTs) {
+    return listPipelineStatus(ingestionPipelineFQN, startTs, endTs)
+        .filter(
+            pipelineStatus -> {
+              Map<String, Object> metadata = pipelineStatus.getMetadata();
+              if (metadata == null) {
+                return false;
+              }
+              Map<String, Object> workflowMetadata =
+                  JsonUtils.readOrConvertValue(metadata.get("workflow"), Map.class);
+              String pipelineStatusService = (String) workflowMetadata.get("serviceName");
+              return pipelineStatusService != null && pipelineStatusService.equals(serviceName);
+            })
+        .map(
+            pipelineStatus ->
+                pipelineStatus.withConfig(
+                    Optional.ofNullable(pipelineStatus.getConfig())
+                        .map(m -> m.getOrDefault("appConfig", null))
+                        .map(JsonUtils::getMap)
+                        .orElse(null)));
   }
 
   public PipelineStatus getLatestPipelineStatus(IngestionPipeline ingestionPipeline) {
@@ -281,8 +346,11 @@ public class IngestionPipelineRepository extends EntityRepository<IngestionPipel
         PipelineStatus.class);
   }
 
-  /** Handles entity updated from PUT and POST operation. */
+  /**
+   * Handles entity updated from PUT and POST operation.
+   */
   public class IngestionPipelineUpdater extends EntityUpdater {
+
     public IngestionPipelineUpdater(
         IngestionPipeline original, IngestionPipeline updated, Operation operation) {
       super(buildIngestionPipelineDecrypted(original), updated, operation);
@@ -290,12 +358,13 @@ public class IngestionPipelineRepository extends EntityRepository<IngestionPipel
 
     @Transaction
     @Override
-    public void entitySpecificUpdate() {
+    public void entitySpecificUpdate(boolean consolidatingChanges) {
       updateSourceConfig();
       updateAirflowConfig(original.getAirflowConfig(), updated.getAirflowConfig());
       updateLogLevel(original.getLoggerLevel(), updated.getLoggerLevel());
       updateEnabled(original.getEnabled(), updated.getEnabled());
       updateDeployed(original.getDeployed(), updated.getDeployed());
+      updateRaiseOnError(original.getRaiseOnError(), updated.getRaiseOnError());
     }
 
     private void updateSourceConfig() {
@@ -328,6 +397,12 @@ public class IngestionPipelineRepository extends EntityRepository<IngestionPipel
       }
     }
 
+    private void updateRaiseOnError(Boolean origRaiseOnError, Boolean updatedRaiseOnError) {
+      if (updatedRaiseOnError != null && !origRaiseOnError.equals(updatedRaiseOnError)) {
+        recordChange("raiseOnError", origRaiseOnError, updatedRaiseOnError);
+      }
+    }
+
     private void updateEnabled(Boolean origEnabled, Boolean updatedEnabled) {
       if (updatedEnabled != null && !origEnabled.equals(updatedEnabled)) {
         recordChange("enabled", origEnabled, updatedEnabled);
@@ -350,5 +425,21 @@ public class IngestionPipelineRepository extends EntityRepository<IngestionPipel
     double profileSample = sourceConfigJson.optDouble("profileSample");
 
     EntityUtil.validateProfileSample(profileSampleType, profileSample);
+  }
+
+  /**
+   * Get either the pipelineType or the application Type.
+   */
+  public static String getPipelineWorkflowType(IngestionPipeline ingestionPipeline) {
+    if (PipelineType.APPLICATION.equals(ingestionPipeline.getPipelineType())) {
+      ApplicationPipeline applicationPipeline =
+          JsonUtils.convertValue(
+              ingestionPipeline.getSourceConfig().getConfig(), ApplicationPipeline.class);
+      ApplicationConfig appConfig =
+          JsonUtils.convertValue(applicationPipeline.getAppConfig(), ApplicationConfig.class);
+      return (String) appConfig.getAdditionalProperties().get("type");
+    } else {
+      return ingestionPipeline.getPipelineType().value();
+    }
   }
 }

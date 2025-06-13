@@ -13,11 +13,18 @@
 
 import { AxiosResponse } from 'axios';
 import { Operation } from 'fast-json-patch';
+import { TabSpecificField } from '../enums/entity.enum';
 import { Category, Type } from '../generated/entity/type';
 import { CustomProperty } from '../generated/type/customProperty';
 import { Paging } from '../generated/type/paging';
 import { getEncodedFqn } from '../utils/StringsUtils';
 import APIClient from './index';
+import { CustomPropertiesForAssets } from './metadataTypeAPI.interface';
+
+export type FieldData = {
+  name: string;
+  type: string;
+};
 
 export const getTypeListByCategory = async (category: Category) => {
   const path = `/metadata/types`;
@@ -34,9 +41,16 @@ export const getTypeListByCategory = async (category: Category) => {
 export const getTypeByFQN = async (typeFQN: string) => {
   const path = `/metadata/types/name/${getEncodedFqn(typeFQN)}`;
 
-  const params = { fields: 'customProperties' };
+  const params = { fields: TabSpecificField.CUSTOM_PROPERTIES };
 
   const response = await APIClient.get<Type>(path, { params });
+
+  return response.data;
+};
+
+export const getAllCustomProperties = async () => {
+  const path = `/metadata/types/customProperties`;
+  const response = await APIClient.get<CustomPropertiesForAssets>(path);
 
   return response.data;
 };

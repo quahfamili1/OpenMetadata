@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -142,7 +142,7 @@ EXPECTED_CREATED_PIPELINES = CreatePipelineRequest(
 MOCK_PIPELINE_SERVICE = PipelineService(
     id="85811038-099a-11ed-861d-0242ac120002",
     name="nifi_source",
-    fullyQualifiedName=FullyQualifiedEntityName(__root__="nifi_source"),
+    fullyQualifiedName=FullyQualifiedEntityName("nifi_source"),
     connection=PipelineConnection(),
     serviceType=PipelineServiceType.Nifi,
 )
@@ -202,15 +202,15 @@ class NifiUnitTest(TestCase):
 
         nifi_token_prop.return_value.token.return_value = "token"
 
-        config = OpenMetadataWorkflowConfig.parse_obj(mock_nifi_config)
+        config = OpenMetadataWorkflowConfig.model_validate(mock_nifi_config)
         self.nifi = NifiSource.create(
             mock_nifi_config["source"],
             config.workflowConfig.openMetadataServerConfig,
         )
-        self.nifi.context.get().__dict__["pipeline"] = MOCK_PIPELINE.name.__root__
+        self.nifi.context.get().__dict__["pipeline"] = MOCK_PIPELINE.name.root
         self.nifi.context.get().__dict__[
             "pipeline_service"
-        ] = MOCK_PIPELINE_SERVICE.name.__root__
+        ] = MOCK_PIPELINE_SERVICE.name.root
 
     def test_pipeline_name(self):
         assert (

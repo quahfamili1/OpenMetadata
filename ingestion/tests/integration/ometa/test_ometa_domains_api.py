@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -41,6 +41,7 @@ from metadata.generated.schema.security.client.openMetadataJWTClientConfig impor
     OpenMetadataJWTClientConfig,
 )
 from metadata.generated.schema.type.entityReference import EntityReference
+from metadata.generated.schema.type.entityReferenceList import EntityReferenceList
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
 
 
@@ -66,7 +67,7 @@ class OMetaDomainTest(TestCase):
     user = metadata.create_or_update(
         data=CreateUserRequest(name="random-user", email="random@user.com"),
     )
-    owner = EntityReference(id=user.id, type="user")
+    owners = EntityReferenceList(root=[EntityReference(id=user.id, type="user")])
 
     service = CreateDashboardServiceRequest(
         name="test-service-dashboard",
@@ -111,8 +112,8 @@ class OMetaDomainTest(TestCase):
 
         service_id = str(
             cls.metadata.get_by_name(
-                entity=DashboardService, fqn=cls.service.name.__root__
-            ).id.__root__
+                entity=DashboardService, fqn=cls.service.name.root
+            ).id.root
         )
 
         cls.metadata.delete(
@@ -123,7 +124,7 @@ class OMetaDomainTest(TestCase):
         )
 
         domain: Domain = cls.metadata.get_by_name(
-            entity=Domain, fqn=cls.create_domain.name.__root__
+            entity=Domain, fqn=cls.create_domain.name.root
         )
 
         cls.metadata.delete(
@@ -142,21 +143,21 @@ class OMetaDomainTest(TestCase):
         res: DataProduct = self.metadata.create_or_update(data=self.create_data_product)
         self.assertEqual(res.name, self.create_data_product.name)
         self.assertEqual(res.description, self.create_data_product.description)
-        self.assertEqual(res.domain.name, self.create_data_product.domain.__root__)
+        self.assertEqual(res.domain.name, self.create_data_product.domain.root)
 
     def test_get_name(self):
         """We can fetch Domains & Data Products by name"""
         self.metadata.create_or_update(data=self.create_domain)
 
         res: Domain = self.metadata.get_by_name(
-            entity=Domain, fqn=self.create_domain.name.__root__
+            entity=Domain, fqn=self.create_domain.name.root
         )
         self.assertEqual(res.name, self.create_domain.name)
 
         self.metadata.create_or_update(data=self.create_data_product)
 
         res: DataProduct = self.metadata.get_by_name(
-            entity=DataProduct, fqn=self.create_data_product.name.__root__
+            entity=DataProduct, fqn=self.create_data_product.name.root
         )
         self.assertEqual(res.name, self.create_data_product.name)
 
@@ -165,7 +166,7 @@ class OMetaDomainTest(TestCase):
         self.metadata.create_or_update(data=self.create_domain)
 
         res_name: Domain = self.metadata.get_by_name(
-            entity=Domain, fqn=self.create_domain.name.__root__
+            entity=Domain, fqn=self.create_domain.name.root
         )
         res: Domain = self.metadata.get_by_id(entity=Domain, entity_id=res_name.id)
         self.assertEqual(res.name, self.create_domain.name)
@@ -173,7 +174,7 @@ class OMetaDomainTest(TestCase):
         self.metadata.create_or_update(data=self.create_data_product)
 
         res_name: DataProduct = self.metadata.get_by_name(
-            entity=DataProduct, fqn=self.create_data_product.name.__root__
+            entity=DataProduct, fqn=self.create_data_product.name.root
         )
         res: DataProduct = self.metadata.get_by_id(
             entity=DataProduct, entity_id=res_name.id
@@ -189,4 +190,39 @@ class OMetaDomainTest(TestCase):
             entity=Dashboard, fqn=self.dashboard.fullyQualifiedName, fields=["domain"]
         )
 
-        self.assertEqual(updated_dashboard.domain.name, domain.name.__root__)
+        self.assertEqual(updated_dashboard.domain.name, domain.name.root)
+
+    def test_add_remove_assets_to_data_product(self):
+        """We can add assets to a data product"""
+        self.metadata.create_or_update(data=self.create_domain)
+        data_product: DataProduct = self.metadata.create_or_update(
+            data=self.create_data_product
+        )
+        asset_ref = EntityReference(id=self.dashboard.id, type="dashboard")
+        self.metadata.add_assets_to_data_product(data_product.name.root, [asset_ref])
+
+        res: DataProduct = self.metadata.get_by_name(
+            entity=DataProduct,
+            fqn=self.create_data_product.name.root,
+            fields=["assets"],
+        )
+        self.assertEqual(len(res.assets.root), 1)
+        self.assertEqual(res.assets.root[0].id, self.dashboard.id)
+        self.assertEqual(res.assets.root[0].type, "dashboard")
+
+        self.metadata.remove_assets_from_data_product(
+            data_product.name.root, [asset_ref]
+        )
+        res: DataProduct = self.metadata.get_by_name(
+            entity=DataProduct,
+            fqn=self.create_data_product.name.root,
+            fields=["assets"],
+        )
+        self.assertEqual(len(res.assets.root), 0)
+
+        # Check what happens if we remove an asset that's not there on a Data Product
+        # We still get a success in the status
+        status = self.metadata.remove_assets_from_data_product(
+            data_product.name.root, [asset_ref]
+        )
+        self.assertEqual(status["status"], "success")

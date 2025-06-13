@@ -36,7 +36,8 @@ export const getAllFeeds = async (
   type?: ThreadType,
   filterType?: FeedFilter,
   taskStatus?: ThreadTaskStatus,
-  userId?: string
+  userId?: string,
+  limit?: number
 ) => {
   const isFilterAll = filterType === FeedFilter.ALL || isUndefined(filterType);
 
@@ -50,6 +51,7 @@ export const getAllFeeds = async (
         filterType: isFilterAll ? undefined : filterType,
         taskStatus,
         userId: isFilterAll ? undefined : userId,
+        limit,
       },
     }
   );
@@ -124,6 +126,12 @@ export const postFeedById = async (id: string, data: Post) => {
   return response.data;
 };
 
+export const getPostsFeedById = async (id: string) => {
+  const response = await APIClient.get<{ data: Post[] }>(`/feed/${id}/posts`);
+
+  return response.data;
+};
+
 export const deletePostById = (threadId: string, postId: string) => {
   return APIClient.delete<Post>(`/feed/${threadId}/posts/${postId}`);
 };
@@ -146,12 +154,6 @@ export const updatePost = async (
     `/feed/${threadId}/posts/${postId}`,
     data
   );
-
-  return response.data;
-};
-
-export const getTask = async (taskID: string) => {
-  const response = await APIClient.get<Thread>(`/feed/tasks/${taskID}`);
 
   return response.data;
 };

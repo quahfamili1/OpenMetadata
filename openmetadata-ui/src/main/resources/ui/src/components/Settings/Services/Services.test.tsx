@@ -15,11 +15,9 @@ import { ColumnsType } from 'antd/lib/table';
 import React from 'react';
 import { PAGE_HEADERS } from '../../../constants/PageHeaders.constant';
 import { PIPELINE_SERVICE_PLATFORM } from '../../../constants/Services.constant';
-import { CursorType } from '../../../enums/pagination.enum';
 import { ServiceCategory } from '../../../enums/service.enum';
 import { PipelineServiceType } from '../../../generated/entity/data/pipeline';
-import { getServices } from '../../../rest/serviceAPI';
-import { PagingHandlerParams } from '../../common/NextPrevious/NextPrevious.interface';
+import LimitWrapper from '../../../hoc/LimitWrapper';
 import Services from './Services';
 
 let isDescription = true;
@@ -118,14 +116,17 @@ jest.mock('../../../hooks/paging/usePaging', () => ({
   }),
 }));
 
-jest.mock('../../../hooks/useAirflowStatus', () => ({
-  useAirflowStatus: jest.fn().mockImplementation(() => ({
-    isFetchingStatus: false,
-    isAirflowAvailable: true,
-    fetchAirflowStatus: jest.fn(),
-    platform: PIPELINE_SERVICE_PLATFORM,
-  })),
-}));
+jest.mock(
+  '../../../context/AirflowStatusProvider/AirflowStatusProvider',
+  () => ({
+    useAirflowStatus: jest.fn().mockImplementation(() => ({
+      isFetchingStatus: false,
+      isAirflowAvailable: true,
+      fetchAirflowStatus: jest.fn(),
+      platform: PIPELINE_SERVICE_PLATFORM,
+    })),
+  })
+);
 
 jest.mock('../../../utils/CommonUtils', () => ({
   getServiceLogo: jest.fn().mockReturnValue('Pipeline Service'),
@@ -139,9 +140,20 @@ jest.mock('../../../rest/serviceAPI', () => ({
   searchService: mockSearchService,
 }));
 
-jest.mock('../../../utils/EntityUtils', () => ({
-  getEntityName: jest.fn().mockReturnValue('Glue'),
+jest.mock('../../../utils/StringsUtils', () => ({
+  ...jest.requireActual('../../../utils/StringsUtils'),
+  stringToHTML: jest.fn((text) => text),
 }));
+
+jest.mock('../../../utils/EntityUtils', () => {
+  const actual = jest.requireActual('../../../utils/EntityUtils');
+
+  return {
+    ...actual,
+    getEntityName: jest.fn().mockReturnValue('Glue'),
+    highlightSearchText: jest.fn((text) => text),
+  };
+});
 
 jest.mock('../../../utils/PermissionsUtils', () => ({
   checkPermission: jest.fn().mockReturnValue(true),
@@ -155,28 +167,6 @@ jest.mock('../../../utils/ServiceUtils', () => ({
 
 jest.mock('../../common/ErrorWithPlaceholder/ErrorPlaceHolder', () => {
   return () => <div data-testid="error-placeholder">ErrorPlaceHolder</div>;
-});
-
-jest.mock('../../common/NextPrevious/NextPrevious', () => {
-  return ({
-    pagingHandler,
-  }: {
-    pagingHandler: ({ cursorType, currentPage }: PagingHandlerParams) => void;
-  }) => (
-    <div data-testid="next-previous-container">
-      NextPrevious
-      <button
-        data-testid="next-previous-button"
-        onClick={() =>
-          pagingHandler({
-            currentPage: 0,
-            cursorType: CursorType.AFTER,
-          })
-        }>
-        NextPrevious
-      </button>
-    </div>
-  );
 });
 
 jest.mock('../../common/OwnerLabel/OwnerLabel.component', () => ({
@@ -207,7 +197,7 @@ jest.mock('../../common/ListView/ListView.component', () => ({
   )),
 }));
 
-jest.mock('../../common/RichTextEditor/RichTextEditorPreviewer', () => {
+jest.mock('../../common/RichTextEditor/RichTextEditorPreviewerV1', () => {
   return jest
     .fn()
     .mockReturnValue(
@@ -263,6 +253,12 @@ jest.mock('react-router-dom', () => ({
     )),
 }));
 
+jest.mock('../../../hoc/LimitWrapper', () => {
+  return jest
+    .fn()
+    .mockImplementation(({ children }) => <>LimitWrapper{children}</>);
+});
+
 describe('Services', () => {
   it('should render Services', async () => {
     await act(async () => {
@@ -295,6 +291,11 @@ describe('Services', () => {
     });
 
     expect(await screen.findByTestId('add-service-button')).toBeInTheDocument();
+
+    expect(LimitWrapper).toHaveBeenCalledWith(
+      expect.objectContaining({ resource: 'dataAssets' }),
+      {}
+    );
   });
 
   it('should call mock push add service skeleton loader while airflow status is not fetching', async () => {
@@ -306,24 +307,6 @@ describe('Services', () => {
     });
 
     expect(mockPush).toHaveBeenCalledWith('/pipelineServices/add-service');
-  });
-
-  it('should call handleServicePageChange', async () => {
-    await act(async () => {
-      render(<Services serviceName={ServiceCategory.PIPELINE_SERVICES} />);
-    });
-
-    await act(async () => {
-      fireEvent.click(await screen.findByTestId('next-previous-button'));
-    });
-
-    expect(getServices as jest.Mock).toHaveBeenCalledWith({
-      after: undefined,
-      before: undefined,
-      include: 'non-deleted',
-      limit: 10,
-      serviceName: 'pipelineServices',
-    });
   });
 
   it('should render columns', async () => {
@@ -342,7 +325,7 @@ describe('Services', () => {
       await screen.findByTestId('service-name-pipelineServices')
     ).toHaveTextContent('Glue');
 
-    expect(await screen.findByText('label.owner')).toBeInTheDocument();
+    expect(await screen.findByText('label.owner-plural')).toBeInTheDocument();
     expect(await screen.findByText('OwnerLabel')).toBeInTheDocument();
   });
 

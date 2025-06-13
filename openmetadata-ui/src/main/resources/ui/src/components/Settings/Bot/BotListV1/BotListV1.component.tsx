@@ -12,7 +12,7 @@
  */
 
 import Icon from '@ant-design/icons/lib/components/Icon';
-import { Button, Col, Row, Space, Switch, Tooltip } from 'antd';
+import { Button, Col, Row, Space, Switch, Tooltip, Typography } from 'antd';
 import { ColumnsType } from 'antd/lib/table';
 import { AxiosError } from 'axios';
 import { isEmpty, lowerCase } from 'lodash';
@@ -20,34 +20,39 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { ReactComponent as IconDelete } from '../../../../assets/svg/ic-delete.svg';
-import { getBotsPath } from '../../../../constants/constants';
 import { BOTS_DOCS } from '../../../../constants/docs.constants';
 import { GlobalSettingsMenuCategory } from '../../../../constants/GlobalSettings.constants';
 import { PAGE_HEADERS } from '../../../../constants/PageHeaders.constant';
+import { useLimitStore } from '../../../../context/LimitsProvider/useLimitsStore';
 import { ERROR_PLACEHOLDER_TYPE } from '../../../../enums/common.enum';
 import { EntityType } from '../../../../enums/entity.enum';
 import { Bot, ProviderType } from '../../../../generated/entity/bot';
 import { Include } from '../../../../generated/type/include';
 import { Paging } from '../../../../generated/type/paging';
+import LimitWrapper from '../../../../hoc/LimitWrapper';
 import { useAuth } from '../../../../hooks/authHooks';
 import { usePaging } from '../../../../hooks/paging/usePaging';
 import { getBots } from '../../../../rest/botsAPI';
-import { getEntityName } from '../../../../utils/EntityUtils';
+import {
+  getEntityName,
+  highlightSearchText,
+} from '../../../../utils/EntityUtils';
 import { getSettingPageEntityBreadCrumb } from '../../../../utils/GlobalSettingsUtils';
+import { getBotsPath } from '../../../../utils/RouterUtils';
+import { stringToHTML } from '../../../../utils/StringsUtils';
 import { showErrorToast } from '../../../../utils/ToastUtils';
 import DeleteWidgetModal from '../../../common/DeleteWidget/DeleteWidgetModal';
 import ErrorPlaceHolder from '../../../common/ErrorWithPlaceholder/ErrorPlaceHolder';
 import FilterTablePlaceHolder from '../../../common/ErrorWithPlaceholder/FilterTablePlaceHolder';
-import NextPrevious from '../../../common/NextPrevious/NextPrevious';
 import { PagingHandlerParams } from '../../../common/NextPrevious/NextPrevious.interface';
-import RichTextEditorPreviewer from '../../../common/RichTextEditor/RichTextEditorPreviewer';
+import RichTextEditorPreviewerNew from '../../../common/RichTextEditor/RichTextEditorPreviewNew';
 import Searchbar from '../../../common/SearchBarComponent/SearchBar.component';
 import Table from '../../../common/Table/Table';
 import TitleBreadcrumb from '../../../common/TitleBreadcrumb/TitleBreadcrumb.component';
 import { TitleBreadcrumbProps } from '../../../common/TitleBreadcrumb/TitleBreadcrumb.interface';
 import PageHeader from '../../../PageHeader/PageHeader.component';
+import './bot-list-v1.less';
 import { BotListV1Props } from './BotListV1.interfaces';
-
 const BotListV1 = ({
   showDeleted,
   handleAddBotClick,
@@ -58,7 +63,7 @@ const BotListV1 = ({
   const [botUsers, setBotUsers] = useState<Bot[]>([]);
   const [selectedUser, setSelectedUser] = useState<Bot>();
   const [loading, setLoading] = useState(true);
-
+  const { getResourceLimit } = useLimitStore();
   const {
     currentPage,
     paging,
@@ -71,6 +76,7 @@ const BotListV1 = ({
 
   const [handleErrorPlaceholder, setHandleErrorPlaceholder] = useState(false);
   const [searchedData, setSearchedData] = useState<Bot[]>([]);
+  const [searchTerm, setSearchTerm] = useState<string>('');
 
   const breadcrumbs: TitleBreadcrumbProps['titleLinks'] = useMemo(
     () => getSettingPageEntityBreadCrumb(GlobalSettingsMenuCategory.BOTS),
@@ -121,7 +127,11 @@ const BotListV1 = ({
 
           return (
             <Link data-testid={`bot-link-${name}`} to={getBotsPath(fqn)}>
-              {name}
+              <Typography.Text
+                className="text-ellipsis bot-link"
+                ellipsis={{ tooltip: true }}>
+                {stringToHTML(highlightSearchText(name, searchTerm))}
+              </Typography.Text>
             </Link>
           );
         },
@@ -132,7 +142,12 @@ const BotListV1 = ({
         key: 'description',
         render: (_, record) =>
           record?.description ? (
-            <RichTextEditorPreviewer markdown={record?.description || ''} />
+            <RichTextEditorPreviewerNew
+              markdown={highlightSearchText(
+                record?.description || '',
+                searchTerm
+              )}
+            />
           ) : (
             <span data-testid="no-description">
               {t('label.no-entity', {
@@ -198,10 +213,12 @@ const BotListV1 = ({
    * handle after delete bot action
    */
   const handleDeleteAction = useCallback(async () => {
+    await getResourceLimit('bot', true, true);
     fetchBots(showDeleted);
   }, [selectedUser]);
 
   const handleSearch = (text: string) => {
+    setSearchTerm(text);
     if (text) {
       const normalizeText = lowerCase(text);
       const matchedData = botUsers.filter(
@@ -244,13 +261,16 @@ const BotListV1 = ({
           doc={BOTS_DOCS}
           heading={t('label.bot')}
           permission={isAdminUser}
+          permissionValue={t('label.create-entity', {
+            entity: t('label.bot'),
+          })}
           type={ERROR_PLACEHOLDER_TYPE.CREATE}
           onClick={handleAddBotClick}
         />
       </Col>
     </Row>
   ) : (
-    <Row className="page-container" gutter={[0, 16]}>
+    <Row gutter={[0, 16]}>
       <Col span={24}>
         <TitleBreadcrumb titleLinks={breadcrumbs} />
       </Col>
@@ -264,6 +284,7 @@ const BotListV1 = ({
           <Space align="end" size={5}>
             <Switch
               checked={showDeleted}
+              data-testid="switch-deleted"
               id="switch-deleted"
               onClick={handleShowDeleted}
             />
@@ -273,13 +294,15 @@ const BotListV1 = ({
           <Tooltip
             placement="topLeft"
             title={!isAdminUser && t('message.admin-only-action')}>
-            <Button
-              data-testid="add-bot"
-              disabled={!isAdminUser}
-              type="primary"
-              onClick={handleAddBotClick}>
-              {addBotLabel}
-            </Button>
+            <LimitWrapper resource="bot">
+              <Button
+                data-testid="add-bot"
+                disabled={!isAdminUser}
+                type="primary"
+                onClick={handleAddBotClick}>
+                {addBotLabel}
+              </Button>
+            </LimitWrapper>
           </Tooltip>
         </Space>
       </Col>
@@ -293,10 +316,18 @@ const BotListV1 = ({
           onSearch={handleSearch}
         />
       </Col>
-      <Col span={24}>
+      <Col className="bot-list-v1-container" span={24}>
         <Table
-          bordered
           columns={columns}
+          customPaginationProps={{
+            currentPage,
+            isLoading: loading,
+            pageSize,
+            paging,
+            pagingHandler: handleBotPageChange,
+            onShowSizeChange: handlePageSizeChange,
+            showPagination,
+          }}
           dataSource={searchedData}
           loading={loading}
           locale={{
@@ -306,17 +337,6 @@ const BotListV1 = ({
           rowKey="name"
           size="small"
         />
-      </Col>
-      <Col span={24}>
-        {showPagination && (
-          <NextPrevious
-            currentPage={currentPage}
-            pageSize={pageSize}
-            paging={paging}
-            pagingHandler={handleBotPageChange}
-            onShowSizeChange={handlePageSizeChange}
-          />
-        )}
       </Col>
 
       <DeleteWidgetModal

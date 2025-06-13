@@ -1,8 +1,8 @@
 #  Copyright 2023 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
+from typing_extensions import Annotated
 
 
 class Tile(BaseModel):
@@ -24,11 +25,25 @@ class Tile(BaseModel):
     """
 
     id: str
-    title: Optional[str]
-    subTitle: Optional[str]
-    embedUrl: Optional[str]
-    datasetId: Optional[str]
-    reportId: Optional[str]
+    title: Optional[str] = None
+    subTitle: Optional[str] = None
+    embedUrl: Optional[str] = None
+    datasetId: Optional[str] = None
+    reportId: Optional[str] = None
+
+
+class PowerBIUser(BaseModel):
+    """
+    PowerBI User Model
+    """
+
+    displayName: Optional[str] = None
+    email: Optional[str] = Field(alias="emailAddress", default=None)
+    userType: Optional[str] = None
+    reportUserAccessRight: Optional[str] = None
+    datasetUserAccessRight: Optional[str] = None
+    dataflowUserAccessRight: Optional[str] = None
+    dashboardUserAccessRight: Optional[str] = None
 
 
 class PowerBIDashboard(BaseModel):
@@ -39,9 +54,10 @@ class PowerBIDashboard(BaseModel):
 
     id: str
     displayName: str
-    webUrl: Optional[str]
-    embedUrl: Optional[str]
+    webUrl: Optional[str] = None
+    embedUrl: Optional[str] = None
     tiles: Optional[List[Tile]] = []
+    users: Optional[List[PowerBIUser]] = []
 
 
 class PowerBIReport(BaseModel):
@@ -52,7 +68,9 @@ class PowerBIReport(BaseModel):
 
     id: str
     name: str
-    datasetId: Optional[str]
+    datasetId: Optional[str] = None
+    users: Optional[List[PowerBIUser]] = []
+    modifiedBy: Optional[str] = None
 
 
 class DashboardsResponse(BaseModel):
@@ -92,8 +110,40 @@ class PowerBiColumns(BaseModel):
     """
 
     name: str
-    dataType: Optional[str]
-    columnType: Optional[str]
+    dataType: Optional[str] = None
+    columnType: Optional[str] = None
+    description: Optional[str] = None
+
+
+class PowerBiMeasureModel(BaseModel):
+    """
+    Represents a Power BI measure, used before converting to a Column instance.
+    """
+
+    dataType: str
+    dataTypeDisplay: str
+    name: str
+    description: str
+
+
+class PowerBiMeasures(BaseModel):
+    """
+    PowerBI Column Model
+    Definition: https://learn.microsoft.com/en-us/rest/api/power-bi/push-datasets/datasets-get-tables-in-group#measure
+    """
+
+    name: str
+    expression: str
+    description: Optional[str] = None
+    isHidden: bool
+
+
+class PowerBITableSource(BaseModel):
+    """
+    PowerBI Table Source
+    """
+
+    expression: Optional[str] = None
 
 
 class PowerBiTable(BaseModel):
@@ -103,8 +153,10 @@ class PowerBiTable(BaseModel):
     """
 
     name: str
-    columns: Optional[List[PowerBiColumns]]
-    description: Optional[str]
+    columns: Optional[List[PowerBiColumns]] = None
+    measures: Optional[List[PowerBiMeasures]] = None
+    description: Optional[str] = None
+    source: Optional[List[PowerBITableSource]] = None
 
 
 class TablesResponse(BaseModel):
@@ -117,6 +169,11 @@ class TablesResponse(BaseModel):
     value: List[PowerBiTable]
 
 
+class DatasetExpression(BaseModel):
+    name: str
+    expression: Optional[str] = None
+
+
 class Dataset(BaseModel):
     """
     PowerBI Dataset Model
@@ -126,7 +183,10 @@ class Dataset(BaseModel):
     id: str
     name: str
     tables: Optional[List[PowerBiTable]] = []
-    description: Optional[str]
+    description: Optional[str] = None
+    users: Optional[List[PowerBIUser]] = []
+    expressions: Optional[List[DatasetExpression]] = []
+    configuredBy: Optional[str] = None
 
 
 class DatasetResponse(BaseModel):
@@ -139,6 +199,14 @@ class DatasetResponse(BaseModel):
     value: List[Dataset]
 
 
+class Dataflow(BaseModel):
+    id: str = Field(alias="objectId")
+    name: str
+    description: Optional[str] = None
+    users: Optional[List[PowerBIUser]] = []
+    modifiedBy: Optional[str] = None
+
+
 class Group(BaseModel):
     """
     PowerBI Group Model
@@ -146,12 +214,13 @@ class Group(BaseModel):
     """
 
     id: str
-    name: Optional[str]
-    type: Optional[str]
-    state: Optional[str]
+    name: Optional[str] = None
+    type: Optional[str] = None
+    state: Optional[str] = None
     dashboards: Optional[List[PowerBIDashboard]] = []
     reports: Optional[List[PowerBIReport]] = []
     datasets: Optional[List[Dataset]] = []
+    dataflows: Optional[List[Dataflow]] = []
 
 
 class GroupsResponse(BaseModel):
@@ -173,7 +242,7 @@ class WorkSpaceScanResponse(BaseModel):
 
     id: str
     createdDateTime: datetime
-    status: Optional[str]
+    status: Optional[str] = None
 
 
 class Workspaces(BaseModel):
@@ -190,8 +259,8 @@ class PowerBiToken(BaseModel):
     PowerBI Token Model
     """
 
-    expires_in: Optional[int]
-    access_token: Optional[str]
+    expires_in: Optional[int] = None
+    access_token: Optional[str] = None
 
 
 class RemoteArtifacts(BaseModel):
@@ -208,7 +277,9 @@ class ConnectionFile(BaseModel):
     PowerBi Connection File Model
     """
 
-    RemoteArtifacts: Optional[List[RemoteArtifacts]]
+    RemoteArtifacts: Annotated[
+        Optional[List[RemoteArtifacts]], Field(None, description="Remote Artifacts")
+    ]
 
 
 class DataModelSchema(BaseModel):
@@ -216,5 +287,5 @@ class DataModelSchema(BaseModel):
     PowerBi Data Model Schema Model
     """
 
-    tables: Optional[List[PowerBiTable]]
-    connectionFile: Optional[ConnectionFile]
+    tables: Optional[List[PowerBiTable]] = None
+    connectionFile: Optional[ConnectionFile] = None

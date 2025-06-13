@@ -14,6 +14,7 @@
 import { RowProps } from 'antd/lib/grid/row';
 import i18n from 'i18next';
 import { Margin } from 'recharts/types/util/types';
+import { SystemChartType } from '../enums/DataInsight.enum';
 import { DataReportIndex } from '../generated/dataInsight/dataInsightChart';
 import { DataInsightChartType } from '../generated/dataInsight/dataInsightChartResult';
 import { ChartFilter } from '../interface/data-insight.interface';
@@ -54,18 +55,16 @@ export const DATA_INSIGHT_GRAPH_COLORS = [
   '#DA996A',
 ];
 
-export const BAR_SIZE = 15;
-
 export const INITIAL_CHART_FILTER: ChartFilter = {
   startTs: getEpochMillisForPastDays(DEFAULT_SELECTED_RANGE.days),
   endTs: getCurrentMillis(),
 };
 
 export const ENTITIES_CHARTS = [
-  DataInsightChartType.TotalEntitiesByType,
-  DataInsightChartType.PercentageOfEntitiesWithDescriptionByType,
-  DataInsightChartType.PercentageOfEntitiesWithOwnerByType,
-  DataInsightChartType.TotalEntitiesByTier,
+  SystemChartType.TotalDataAssets,
+  SystemChartType.PercentageOfDataAssetWithDescription,
+  SystemChartType.PercentageOfDataAssetWithOwner,
+  SystemChartType.TotalDataAssetsByTier,
 ];
 
 export const WEB_CHARTS = [
@@ -86,7 +85,7 @@ export const WEB_SUMMARY_LIST = [
     id: DataInsightChartType.PageViewsByEntities,
   },
   {
-    label: i18n.t('label.daily-active-users-on-the-platform'),
+    label: i18n.t('label.average-daily-active-users-on-the-platform'),
     latest: 0,
     id: DataInsightChartType.DailyActiveUsers,
   },
@@ -98,71 +97,62 @@ export const ENTITIES_SUMMARY_LIST = [
       entity: i18n.t('label.data-asset-plural'),
     }),
     latest: 0,
-    id: DataInsightChartType.TotalEntitiesByType,
+    type: SystemChartType.TotalDataAssetsSummaryCard,
+    id: SystemChartType.TotalDataAssets,
   },
   {
     label: i18n.t('label.data-asset-plural-with-field', {
       field: i18n.t('label.description'),
     }),
     latest: 0,
-    id: DataInsightChartType.PercentageOfEntitiesWithDescriptionByType,
+    type: SystemChartType.DataAssetsWithDescriptionSummaryCard,
+    id: SystemChartType.PercentageOfDataAssetWithDescription,
   },
   {
     label: i18n.t('label.data-asset-plural-with-field', {
       field: i18n.t('label.owner-plural'),
     }),
     latest: 0,
-    id: DataInsightChartType.PercentageOfEntitiesWithOwnerByType,
+    type: SystemChartType.DataAssetsWithOwnerSummaryCard,
+    id: SystemChartType.PercentageOfDataAssetWithOwner,
   },
   {
     label: i18n.t('label.total-entity', {
       entity: i18n.t('label.data-assets-with-tier-plural'),
     }),
     latest: 0,
-    id: DataInsightChartType.TotalEntitiesByTier,
+    type: SystemChartType.TotalDataAssetsWithTierSummaryCard,
+    id: SystemChartType.TotalDataAssetsByTier,
   },
-];
-
-export const SUPPORTED_CHARTS_FOR_KPI = [
-  DataInsightChartType.PercentageOfEntitiesWithDescriptionByType,
-  DataInsightChartType.PercentageOfEntitiesWithOwnerByType,
 ];
 
 export const KPI_DATE_PICKER_FORMAT = 'YYYY-MM-DD';
 
-export const KPI_DATES = {
-  startDate: '',
-  endDate: '',
-};
-
-export const TOTAL_ENTITY_CHART_COLOR = [
-  '#1FA1F0',
-  '#416BB3',
-  '#5CAE95',
-  '#2269F5',
-  '#76E9C6',
-  '#FEB019',
-  '#9747FF',
-  '#FF7C50',
-  '#AD4F82',
-  '#C870C5',
-  '#ED7014',
-  '#FCAE1E',
-  '#B56727',
-  '#F9E076',
-  '#3CB043',
-  '#48AAAD',
-  '#0492C2',
-  '#A1045A',
-  '#B65FCF',
-  '#67032F',
-  '#4E2A84',
-  '#78184A',
-  '#563C5C',
-  '#5F5498',
-  '#4E8C9C',
-  '#F4F2FF',
-  '#ECFBFF',
+export const BASE_COLORS = [
+  '#E57373',
+  '#BA68C8',
+  '#64B5F6',
+  '#4DB6AC',
+  '#81C784',
+  '#FFD54F',
+  '#FF8A65',
+  '#A1887F',
+  '#90A4AE',
+  '#7986CB',
+  '#F06292',
+  '#4FC3F7',
+  '#FFD740',
+  '#AED581',
+  '#CE93D8',
+  '#B39DDB',
+  '#EF5350',
+  '#FF7043',
+  '#7986CB',
+  '#FFCA28',
+  '#FFB74D',
+  '#A5D6A7',
+  '#80CBC4',
+  '#F48FB1',
 ];
 
 export const KPI_WIDGET_GRAPH_COLORS = ['#5F5498', '#4E8C9C'];

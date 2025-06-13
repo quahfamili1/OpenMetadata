@@ -28,6 +28,7 @@ import { useTranslation } from 'react-i18next';
 import { useHistory } from 'react-router-dom';
 import { ReactComponent as CheckMarkIcon } from '../../../../assets/svg/ic-cloud-checkmark.svg';
 import { ROUTES } from '../../../../constants/constants';
+import { TabSpecificField } from '../../../../enums/entity.enum';
 import { AppMarketPlaceDefinition } from '../../../../generated/entity/applications/marketplace/appMarketPlaceDefinition';
 import { Include } from '../../../../generated/type/include';
 import { useFqn } from '../../../../hooks/useFqn';
@@ -38,7 +39,7 @@ import { getEntityName } from '../../../../utils/EntityUtils';
 import { getAppInstallPath } from '../../../../utils/RouterUtils';
 import { showErrorToast } from '../../../../utils/ToastUtils';
 import Loader from '../../../common/Loader/Loader';
-import RichTextEditorPreviewer from '../../../common/RichTextEditor/RichTextEditorPreviewer';
+import RichTextEditorPreviewerV1 from '../../../common/RichTextEditor/RichTextEditorPreviewerV1';
 import PageLayoutV1 from '../../../PageLayoutV1/PageLayoutV1';
 import applicationsClassBase from '../AppDetails/ApplicationsClassBase';
 import AppLogo from '../AppLogo/AppLogo.component';
@@ -74,7 +75,7 @@ const MarketPlaceAppDetails = () => {
     setIsLoading(true);
     try {
       const data = await getMarketPlaceApplicationByFqn(fqn, {
-        fields: 'owner',
+        fields: TabSpecificField.OWNERS,
       });
       setAppData(data);
 
@@ -102,7 +103,7 @@ const MarketPlaceAppDetails = () => {
   const fetchInstalledAppDetails = useCallback(async () => {
     try {
       await getApplicationByName(fqn, {
-        fields: 'owner',
+        fields: TabSpecificField.OWNERS,
         include: Include.All,
       });
       setIsInstalled(true);
@@ -202,7 +203,10 @@ const MarketPlaceAppDetails = () => {
         <Space className="p-t-lg" direction="vertical" size={8}>
           <Typography.Text>
             {appData?.supportEmail && (
-              <Typography.Link href={appData?.supportEmail} target="_blank">
+              <Typography.Link
+                data-testid="app-support-email"
+                href={`mailto:${appData?.supportEmail}`}
+                target="_blank">
                 <Space>{t('label.get-app-support')}</Space>
               </Typography.Link>
             )}
@@ -264,7 +268,7 @@ const MarketPlaceAppDetails = () => {
 
         <Col span={24}>
           <div className="p-md">
-            <RichTextEditorPreviewer
+            <RichTextEditorPreviewerV1
               enableSeeMoreVariant={false}
               markdown={appData?.description ?? ''}
             />

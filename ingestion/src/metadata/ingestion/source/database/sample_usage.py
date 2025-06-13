@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -26,6 +26,7 @@ from metadata.generated.schema.entity.services.databaseService import (
 from metadata.generated.schema.metadataIngestion.workflow import (
     Source as WorkflowSource,
 )
+from metadata.generated.schema.type.basic import DateTime
 from metadata.generated.schema.type.tableQuery import TableQueries, TableQuery
 from metadata.ingestion.api.steps import InvalidSourceException
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
@@ -46,9 +47,9 @@ class SampleUsageSource(UsageSource):
 
     def __init__(self, config: WorkflowSource, metadata: OpenMetadata):
         super().__init__(config, metadata, False)
-        self.analysis_date = datetime.utcnow()
+        self.analysis_date = DateTime(datetime.now())
 
-        sample_data_folder = self.service_connection.connectionOptions.__root__.get(
+        sample_data_folder = self.service_connection.connectionOptions.root.get(
             "sampleDataFolder"
         )
         if not sample_data_folder:
@@ -73,8 +74,8 @@ class SampleUsageSource(UsageSource):
         cls, config_dict, metadata: OpenMetadata, pipeline_name: Optional[str] = None
     ):
         """Create class instance"""
-        config: WorkflowSource = WorkflowSource.parse_obj(config_dict)
-        connection: CustomDatabaseConnection = config.serviceConnection.__root__.config
+        config: WorkflowSource = WorkflowSource.model_validate(config_dict)
+        connection: CustomDatabaseConnection = config.serviceConnection.root.config
         if not isinstance(connection, CustomDatabaseConnection):
             raise InvalidSourceException(
                 f"Expected CustomDatabaseConnection, but got {connection}"
@@ -86,14 +87,13 @@ class SampleUsageSource(UsageSource):
             queries=[
                 TableQuery(
                     query=row["query"],
-                    userName="",
-                    startTime="",
-                    endTime="",
                     analysisDate=self.analysis_date,
                     aborted=False,
                     databaseName="ecommerce_db",
                     serviceName=self.config.serviceName,
                     databaseSchema="shopify",
+                    cost=row.get("cost"),
+                    userName=row.get("user"),
                 )
                 for row in self.query_logs
             ]

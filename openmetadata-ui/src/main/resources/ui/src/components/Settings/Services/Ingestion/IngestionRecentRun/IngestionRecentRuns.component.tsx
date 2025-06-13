@@ -11,115 +11,141 @@
  *  limitations under the License.
  */
 
-import { Popover, Skeleton, Space, Tag } from 'antd';
+import { Popover, Skeleton, Space, Tag, Typography } from 'antd';
 import classNamesFunc from 'classnames';
-import { isEmpty, isUndefined, startCase } from 'lodash';
-import React, {
-  FunctionComponent,
-  useCallback,
-  useEffect,
-  useState,
-} from 'react';
+import { isEmpty, isNumber, isUndefined, upperFirst } from 'lodash';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { PIPELINE_INGESTION_RUN_STATUS } from '../../../../../constants/pipeline.constants';
+import { NO_DATA_PLACEHOLDER } from '../../../../../constants/constants';
+import { App } from '../../../../../generated/entity/applications/app';
+import { AppRunRecord } from '../../../../../generated/entity/applications/appRunRecord';
 import {
   IngestionPipeline,
   PipelineStatus,
 } from '../../../../../generated/entity/services/ingestionPipelines/ingestionPipeline';
 import { getRunHistoryForPipeline } from '../../../../../rest/ingestionPipelineAPI';
 import {
-  formatDateTime,
+  formatDateTimeLong,
   getCurrentMillis,
   getEpochMillisForPastDays,
 } from '../../../../../utils/date-time/DateTimeUtils';
 import IngestionRunDetailsModal from '../../../../Modals/IngestionRunDetailsModal/IngestionRunDetailsModal';
 import './ingestion-recent-run.style.less';
+import { IngestionRecentRunsProps } from './IngestionRecentRuns.interface';
 
-interface Props {
-  ingestion?: IngestionPipeline;
-  classNames?: string;
-  appRuns?: PipelineStatus[];
-  isApplicationType?: boolean;
-}
-const queryParams = {
-  startTs: getEpochMillisForPastDays(1),
-  endTs: getCurrentMillis(),
-};
-
-export const IngestionRecentRuns: FunctionComponent<Props> = ({
+export const IngestionRecentRuns = <
+  T extends PipelineStatus | AppRunRecord,
+  U extends IngestionPipeline | App
+>({
   ingestion,
   classNames,
   appRuns,
-  isApplicationType,
-}: Props) => {
+  fetchStatus = true,
+  pipelineIdToFetchStatus = '',
+  handlePipelineIdToFetchStatus,
+  isAppRunsLoading = false,
+}: Readonly<IngestionRecentRunsProps<T, U>>) => {
   const { t } = useTranslation();
-  const [recentRunStatus, setRecentRunStatus] = useState<PipelineStatus[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedStatus, setSelectedStatus] = useState<PipelineStatus>();
+  const [recentRunStatus, setRecentRunStatus] = useState<T[]>([]);
+  const [loading, setLoading] = useState(fetchStatus);
+  const [selectedStatus, setSelectedStatus] = useState<T>();
 
   const fetchPipelineStatus = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await getRunHistoryForPipeline(
-        ingestion?.fullyQualifiedName ?? '',
-        queryParams
-      );
+      if (!isUndefined(ingestion?.fullyQualifiedName)) {
+        const ingestionPipeline = ingestion as IngestionPipeline;
 
-      const runs = response.data.splice(0, 5).reverse() ?? [];
+        const queryParams = {
+          startTs: getEpochMillisForPastDays(1),
+          endTs: getCurrentMillis(),
+        };
+        const response = await getRunHistoryForPipeline(
+          ingestionPipeline?.fullyQualifiedName ?? '',
+          queryParams
+        );
 
-      setRecentRunStatus(
-        runs.length === 0 && ingestion?.pipelineStatuses
-          ? [ingestion.pipelineStatuses]
-          : runs
-      );
+        const runs = response.data.splice(0, 5).reverse() ?? [];
+
+        setRecentRunStatus(
+          (runs.length === 0 && ingestionPipeline?.pipelineStatuses
+            ? [ingestionPipeline.pipelineStatuses]
+            : runs) as T[]
+        );
+      }
     } finally {
       setLoading(false);
     }
-  }, [ingestion, ingestion?.fullyQualifiedName]);
+  }, [ingestion, ingestion?.fullyQualifiedName, appRuns]);
 
   useEffect(() => {
-    if (isApplicationType && appRuns) {
-      setRecentRunStatus(appRuns.splice(0, 5).reverse() ?? []);
-      setLoading(false);
-    } else if (ingestion?.fullyQualifiedName) {
+    if (fetchStatus) {
       fetchPipelineStatus();
     }
   }, [ingestion, ingestion?.fullyQualifiedName]);
 
-  const handleRunStatusClick = (status: PipelineStatus) => {
+  useEffect(() => {
+    if (!isEmpty(appRuns)) {
+      setRecentRunStatus(appRuns?.splice(0, 5).reverse() ?? []);
+    }
+  }, [appRuns]);
+
+  useEffect(() => {
+    // To fetch pipeline status on demand
+    // If pipelineIdToFetchStatus is present and equal to current pipeline id
+    if (pipelineIdToFetchStatus === ingestion?.id) {
+      fetchPipelineStatus();
+      handlePipelineIdToFetchStatus?.(); // Clear the id after fetching status
+    }
+  }, [pipelineIdToFetchStatus]);
+
+  const handleRunStatusClick = (status: T) => {
     setSelectedStatus(status);
   };
 
   const handleModalCancel = () => setSelectedStatus(undefined);
 
-  if (loading) {
-    return <Skeleton.Input size="small" />;
+  if (isAppRunsLoading || loading) {
+    return <Skeleton.Input active size="small" />;
   }
 
   return (
-    <Space className={classNames} size={2}>
+    <Space className={classNames} size={5}>
       {isEmpty(recentRunStatus) ? (
-        <p data-testid="pipeline-status">--</p>
+        <Typography.Text data-testid="pipeline-status">
+          {NO_DATA_PLACEHOLDER}
+        </Typography.Text>
       ) : (
         recentRunStatus.map((r, i) => {
+          const pipelineState =
+            (r as PipelineStatus)?.pipelineState ?? (r as AppRunRecord)?.status;
+          const runId =
+            (r as PipelineStatus)?.runId ?? (r as AppRunRecord)?.appId;
+          const startDate =
+            (r as PipelineStatus)?.startDate ?? (r as AppRunRecord)?.startTime;
+          const endDate =
+            (r as PipelineStatus)?.endDate ?? (r as AppRunRecord)?.endTime;
+
           const status = (
             <Tag
-              className={classNamesFunc('ingestion-run-badge', {
-                latest: i === recentRunStatus.length - 1,
-              })}
-              color={
-                PIPELINE_INGESTION_RUN_STATUS[r?.pipelineState ?? 'success']
-              }
+              className={classNamesFunc(
+                'ingestion-run-badge',
+                pipelineState ?? '',
+                {
+                  latest: i === recentRunStatus.length - 1,
+                }
+              )}
               data-testid="pipeline-status"
-              key={`${r.runId}-status`}
+              key={`${runId}-status`}
               onClick={() => handleRunStatusClick(r)}>
               {i === recentRunStatus.length - 1
-                ? startCase(r?.pipelineState)
+                ? upperFirst(pipelineState)
                 : ''}
             </Tag>
           );
 
-          const showTooltip = r?.endDate ?? r?.startDate ?? r?.timestamp;
+          const showTooltip =
+            isNumber(endDate) || isNumber(startDate) || isNumber(r?.timestamp);
 
           return showTooltip ? (
             <Popover
@@ -128,23 +154,23 @@ export const IngestionRecentRuns: FunctionComponent<Props> = ({
                   {r.timestamp && (
                     <p>
                       {`${t('label.execution-date')}:`}{' '}
-                      {formatDateTime(r.timestamp)}
+                      {formatDateTimeLong(r.timestamp)}
                     </p>
                   )}
-                  {r.startDate && (
+                  {startDate && (
                     <p>
                       {t('label.start-entity', { entity: t('label.date') })}:{' '}
-                      {formatDateTime(r.startDate)}
+                      {formatDateTimeLong(startDate)}
                     </p>
                   )}
-                  {r.endDate && (
+                  {endDate && (
                     <p>
-                      {`${t('label.end-date')}:`} {formatDateTime(r.endDate)}
+                      {`${t('label.end-date')}:`} {formatDateTimeLong(endDate)}
                     </p>
                   )}
                 </div>
               }
-              key={`${r.runId}-timestamp`}>
+              key={`${runId}-timestamp`}>
               {status}
             </Popover>
           ) : (

@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -91,7 +91,7 @@ def add_status(
 
     task_status = []
     # We will append based on the current registered status
-    if pipeline_status and pipeline_status.timestamp.__root__ == execution_date:
+    if pipeline_status and pipeline_status.timestamp.root == execution_date:
         # If we are clearing a task, use the status of the new execution
         task_status = [
             task
@@ -123,5 +123,5 @@ def add_status(
 
     operator.log.info(f"Added status to DAG {updated_status}")
     metadata.add_pipeline_status(
-        fqn=pipeline.fullyQualifiedName.__root__, status=updated_status
+        fqn=pipeline.fullyQualifiedName.root, status=updated_status
     )

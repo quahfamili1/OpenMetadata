@@ -21,12 +21,14 @@ export interface Props {
     following: string;
   };
   handlePaginate: (page: string | number) => void;
+  afterDeleteAction: (isSoftDelete?: boolean, version?: number) => void;
   updateUserDetails: (data: Partial<User>, key: keyof User) => Promise<void>;
   authenticationMechanism?: PersonalAccessToken;
 }
 
 export enum UserPageTabs {
   ACTIVITY = 'activity_feed',
+  TASK = 'task',
   MY_DATA = 'mydata',
   FOLLOWING = 'following',
   ACCESS_TOKEN = 'access-token',

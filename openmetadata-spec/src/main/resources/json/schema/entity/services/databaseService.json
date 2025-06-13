@@ -49,12 +49,18 @@
         "Dbt",
         "SapHana",
         "MongoDB",
+        "Cassandra",
         "Couchbase",
         "Greenplum",
         "Doris",
         "UnityCatalog",
         "SAS",
-        "Iceberg"
+        "Iceberg",
+        "Teradata",
+        "SapErp",
+        "Synapse",
+        "Exasol",
+        "Cockroach"
       ],
       "javaEnums": [
         {
@@ -160,6 +166,9 @@
           "name": "MongoDB"
         },
         {
+          "name": "Cassandra"
+        },
+        {
           "name": "Couchbase"
         },
         {
@@ -176,6 +185,21 @@
         },
         {
           "name": "Iceberg"
+        },
+        {
+          "name": "Teradata"
+        },
+        {
+          "name": "SapErp"
+        },
+        {
+          "name": "Synapse"
+        },
+        {
+          "name": "Exasol"
+        },
+        {
+          "name": "Cockroach"
         }
       ]
     },
@@ -286,6 +310,9 @@
               "$ref": "./connections/database/mongoDBConnection.json"
             },
             {
+              "$ref": "./connections/database/cassandraConnection.json"
+            },
+            {
               "$ref": "./connections/database/couchbaseConnection.json"
             },
             {
@@ -302,6 +329,21 @@
             },
             {
               "$ref": "./connections/database/icebergConnection.json"
+            },
+            {
+              "$ref": "./connections/database/teradataConnection.json"
+            },
+            {
+              "$ref": "./connections/database/sapErpConnection.json"
+            },
+            {
+              "$ref": "./connections/database/synapseConnection.json"
+            },
+            {
+              "$ref": "./connections/database/exasolConnection.json"
+            },
+            {
+              "$ref": "./connections/database/cockroachConnection.json"
             }
           ]
         }
@@ -351,7 +393,7 @@
       "items": {
         "$ref": "../../type/tagLabel.json"
       },
-      "default": null
+      "default": []
     },
     "version": {
       "description": "Metadata version of the entity.",
@@ -365,15 +407,23 @@
       "description": "User who made the update.",
       "type": "string"
     },
-    "owner": {
-      "description": "Owner of this database service.",
-      "$ref": "../../type/entityReference.json"
+    "owners": {
+      "description": "Owners of this database service.",
+      "$ref": "../../type/entityReferenceList.json"
     },
     "href": {
       "description": "Link to the resource corresponding to this database service.",
       "$ref": "../../type/basic.json#/definitions/href"
     },
+    "followers": {
+      "description": "Followers of this entity.",
+      "$ref": "../../type/entityReferenceList.json"
+    },
     "changeDescription": {
+      "description": "Change that lead to this version of the entity.",
+      "$ref": "../../type/entityHistory.json#/definitions/changeDescription"
+    },
+    "incrementalChangeDescription": {
       "description": "Change that lead to this version of the entity.",
       "$ref": "../../type/entityHistory.json#/definitions/changeDescription"
     },
@@ -388,6 +438,10 @@
     },
     "domain" : {
       "description": "Domain the Database service belongs to.",
+      "$ref": "../../type/entityReference.json"
+    },
+    "ingestionRunner" : {
+      "description": "The ingestion agent responsible for executing the ingestion pipeline.",
       "$ref": "../../type/entityReference.json"
     }
   },

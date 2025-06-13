@@ -21,9 +21,8 @@ import { TestCaseResolutionStatusTypes } from '../../../../generated/tests/testC
 import { formatDateTime } from '../../../../utils/date-time/DateTimeUtils';
 import { getEntityName } from '../../../../utils/EntityUtils';
 import { useActivityFeedProvider } from '../../../ActivityFeed/ActivityFeedProvider/ActivityFeedProvider';
-import AssigneeList from '../../../common/AssigneeList/AssigneeList';
 import { OwnerLabel } from '../../../common/OwnerLabel/OwnerLabel.component';
-import RichTextEditorPreviewer from '../../../common/RichTextEditor/RichTextEditorPreviewer';
+import RichTextEditorPreviewerV1 from '../../../common/RichTextEditor/RichTextEditorPreviewerV1';
 import Severity from '../../../DataQuality/IncidentManager/Severity/Severity.component';
 import './task-tab-incident-manager-header.style.less';
 
@@ -136,7 +135,7 @@ const TaskTabIncidentManagerHeader = ({ thread }: { thread: Thread }) => {
             isEmpty(thread.task?.assignees) ? (
               NO_DATA_PLACEHOLDER
             ) : (
-              <AssigneeList assignees={thread.task?.assignees ?? []} />
+              <OwnerLabel owners={thread.task?.assignees} />
             )}
           </div>
           <div className="gap-2 flex-center">
@@ -144,7 +143,7 @@ const TaskTabIncidentManagerHeader = ({ thread }: { thread: Thread }) => {
               {`${t('label.created-by')}: `}
             </Typography.Text>
             <OwnerLabel
-              owner={{ name: thread.createdBy, type: 'user', id: '' }}
+              owners={[{ name: thread.createdBy, type: 'user', id: '' }]}
             />
           </div>
         </Space>
@@ -173,7 +172,7 @@ const TaskTabIncidentManagerHeader = ({ thread }: { thread: Thread }) => {
           <Typography.Text className="text-grey-muted">
             {`${t('label.failure-comment')}: `}
           </Typography.Text>
-          <RichTextEditorPreviewer
+          <RichTextEditorPreviewerV1
             markdown={
               latestTestCaseResolutionStatus?.testCaseResolutionStatusDetails
                 ?.testCaseFailureComment ?? ''

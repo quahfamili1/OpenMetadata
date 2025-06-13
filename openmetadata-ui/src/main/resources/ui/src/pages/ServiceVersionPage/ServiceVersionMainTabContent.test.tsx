@@ -66,7 +66,7 @@ jest.mock('../../components/common/NextPrevious/NextPrevious', () =>
 );
 
 jest.mock(
-  '../../components/common/RichTextEditor/RichTextEditorPreviewer',
+  '../../components/common/RichTextEditor/RichTextEditorPreviewerV1',
   () => jest.fn().mockImplementation(() => <div>RichTextEditorPreviewer</div>)
 );
 
@@ -83,15 +83,17 @@ const mockData: Database[] = [
     updatedAt: 1692852095047,
     updatedBy: 'admin',
     href: 'http://localhost:8585/api/v1/databases/79627fa0-a4c1-4a8a-a00f-12a5c70cd2db',
-    owner: {
-      id: '4d9d9c11-7947-41a9-93fa-3afcec298765',
-      type: 'user',
-      name: 'adam_rodriguez9',
-      fullyQualifiedName: 'adam_rodriguez9',
-      displayName: 'Adam Rodriguez',
-      deleted: false,
-      href: 'http://localhost:8585/api/v1/users/4d9d9c11-7947-41a9-93fa-3afcec298765',
-    },
+    owners: [
+      {
+        id: '4d9d9c11-7947-41a9-93fa-3afcec298765',
+        type: 'user',
+        name: 'adam_rodriguez9',
+        fullyQualifiedName: 'adam_rodriguez9',
+        displayName: 'Adam Rodriguez',
+        deleted: false,
+        href: 'http://localhost:8585/api/v1/users/4d9d9c11-7947-41a9-93fa-3afcec298765',
+      },
+    ],
     service: {
       id: '958a73c6-55d0-490f-8024-2a78a446d1db',
       type: 'databaseService',
@@ -154,8 +156,8 @@ describe('ServiceVersionMainTabContent tests', () => {
 
     const entityTable = screen.getByTestId('service-children-table');
     const entityName = screen.getByText('ecommerce_db');
-    const entityOwnerName = screen.getByText('Adam Rodriguez');
-    const entityDescription = screen.getByText('RichTextEditorPreviewer');
+    const entityOwner = screen.getByText('ProfilePicture');
+    const entityDescription = screen.getByTestId('viewer-container');
 
     expect(entityTable).toBeInTheDocument();
     expect(screen.getByText('DescriptionV1')).toBeInTheDocument();
@@ -163,10 +165,10 @@ describe('ServiceVersionMainTabContent tests', () => {
     expect(screen.queryByText('NextPrevious')).toBeNull();
     expect(screen.getAllByText('TagsContainerV2')).toHaveLength(2);
     expect(entityName).toBeInTheDocument();
-    expect(entityOwnerName).toBeInTheDocument();
+    expect(entityOwner).toBeInTheDocument();
     expect(entityDescription).toBeInTheDocument();
     expect(entityTable.contains(entityName)).toBe(true);
-    expect(entityTable.contains(entityOwnerName)).toBe(true);
+    expect(entityTable.contains(entityOwner)).toBe(true);
     expect(entityTable.contains(entityDescription)).toBe(true);
   });
 
@@ -175,7 +177,7 @@ describe('ServiceVersionMainTabContent tests', () => {
       wrapper: MemoryRouter,
     });
 
-    const loader = await screen.findByTestId('skeleton-table');
+    const loader = await screen.findByTestId('loader');
 
     expect(loader).toBeInTheDocument();
   });

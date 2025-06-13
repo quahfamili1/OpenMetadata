@@ -22,7 +22,7 @@ import React, {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as CheckIcon } from '../../../../assets/svg/ic-check.svg';
-import { ReactComponent as TaskIcon } from '../../../../assets/svg/ic-task.svg';
+import { ReactComponent as TaskIcon } from '../../../../assets/svg/ic-task-new.svg';
 import { observerOptions } from '../../../../constants/Mydata.constants';
 import { EntityType } from '../../../../enums/entity.enum';
 import { ThreadType } from '../../../../generated/api/feed/createThread';
@@ -30,19 +30,22 @@ import {
   Thread,
   ThreadTaskStatus,
 } from '../../../../generated/entity/feed/thread';
-import { EntityReference } from '../../../../generated/entity/type';
 import { useElementInView } from '../../../../hooks/useElementInView';
 import { useFqn } from '../../../../hooks/useFqn';
-import ActivityFeedListV1 from '../../../ActivityFeed/ActivityFeedList/ActivityFeedListV1.component';
+import { useTestCaseStore } from '../../../../pages/IncidentManager/IncidentManagerDetailPage/useTestCase.store';
+import ActivityFeedListV1New from '../../../ActivityFeed/ActivityFeedList/ActivityFeedListV1New.component';
 import { useActivityFeedProvider } from '../../../ActivityFeed/ActivityFeedProvider/ActivityFeedProvider';
 import { TaskFilter } from '../../../ActivityFeed/ActivityFeedTab/ActivityFeedTab.interface';
 import Loader from '../../../common/Loader/Loader';
-import { TaskTab } from '../../../Entity/Task/TaskTab/TaskTab.component';
+import { TaskTabNew } from '../../../Entity/Task/TaskTab/TaskTabNew.component';
 import './test-case-incident-tab.style.less';
 
-const TestCaseIncidentTab = ({ owner }: { owner?: EntityReference }) => {
+const TestCaseIncidentTab = () => {
   const { t } = useTranslation();
   const { fqn: decodedFqn } = useFqn();
+  const { testCase } = useTestCaseStore();
+
+  const owners = useMemo(() => testCase?.owners, [testCase]);
 
   const {
     selectedThread,
@@ -80,9 +83,11 @@ const TestCaseIncidentTab = ({ owner }: { owner?: EntityReference }) => {
 
   const handleFeedClick = useCallback(
     (feed: Thread) => {
-      setActiveThread(feed);
+      if (selectedThread?.id !== feed?.id) {
+        setActiveThread(feed);
+      }
     },
-    [setActiveThread]
+    [setActiveThread, selectedThread]
   );
 
   const loader = useMemo(() => (loading ? <Loader /> : null), [loading]);
@@ -130,12 +135,14 @@ const TestCaseIncidentTab = ({ owner }: { owner?: EntityReference }) => {
   };
 
   return (
-    <div className="incident-page-issue-tab" data-testid="issue-tab-container">
+    <div
+      className="h-full incident-page-issue-tab"
+      data-testid="issue-tab-container">
       <div
         className="left-container"
         data-testid="left-container"
         id="left-container">
-        <div className="d-flex gap-4 p-sm p-x-lg activity-feed-task">
+        <div className="d-flex gap-4 p-sm p-x-lg">
           <Typography.Text
             className={classNames(
               'cursor-pointer p-l-xss d-flex items-center',
@@ -159,13 +166,14 @@ const TestCaseIncidentTab = ({ owner }: { owner?: EntityReference }) => {
           </Typography.Text>
         </div>
 
-        <ActivityFeedListV1
+        <ActivityFeedListV1New
           hidePopover
           activeFeedId={selectedThread?.id}
           emptyPlaceholderText={t('message.no-tasks-assigned')}
           feedList={threads}
           isForFeedTab={false}
           isLoading={false}
+          selectedThread={selectedThread}
           showThread={false}
           onFeedClick={handleFeedClick}
         />
@@ -182,10 +190,10 @@ const TestCaseIncidentTab = ({ owner }: { owner?: EntityReference }) => {
         {loader}
         {selectedThread && !loading && (
           <div id="task-panel">
-            <TaskTab
+            <TaskTabNew
               entityType={EntityType.TEST_CASE}
               isForFeedTab={false}
-              owner={owner}
+              owners={owners}
               taskThread={selectedThread}
               onAfterClose={handleAfterTaskClose}
             />

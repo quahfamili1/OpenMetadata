@@ -21,15 +21,18 @@ import { Link, useHistory } from 'react-router-dom';
 import { ReactComponent as IconDelete } from '../../../assets/svg/ic-delete.svg';
 import DeleteWidgetModal from '../../../components/common/DeleteWidget/DeleteWidgetModal';
 import ErrorPlaceHolder from '../../../components/common/ErrorWithPlaceholder/ErrorPlaceHolder';
-import NextPrevious from '../../../components/common/NextPrevious/NextPrevious';
 import { PagingHandlerParams } from '../../../components/common/NextPrevious/NextPrevious.interface';
-import RichTextEditorPreviewer from '../../../components/common/RichTextEditor/RichTextEditorPreviewer';
+import RichTextEditorPreviewerNew from '../../../components/common/RichTextEditor/RichTextEditorPreviewNew';
 import Table from '../../../components/common/Table/Table';
 import TitleBreadcrumb from '../../../components/common/TitleBreadcrumb/TitleBreadcrumb.component';
 import { TitleBreadcrumbProps } from '../../../components/common/TitleBreadcrumb/TitleBreadcrumb.interface';
 import PageHeader from '../../../components/PageHeader/PageHeader.component';
 import PageLayoutV1 from '../../../components/PageLayoutV1/PageLayoutV1';
-import { PAGE_SIZE_MEDIUM, ROUTES } from '../../../constants/constants';
+import {
+  NO_DATA_PLACEHOLDER,
+  PAGE_SIZE_MEDIUM,
+  ROUTES,
+} from '../../../constants/constants';
 import { GlobalSettingsMenuCategory } from '../../../constants/GlobalSettings.constants';
 import {
   NO_PERMISSION_FOR_ACTION,
@@ -129,9 +132,12 @@ const PoliciesListPage = () => {
         title: t('label.description'),
         dataIndex: 'description',
         key: 'description',
-        render: (_, record) => (
-          <RichTextEditorPreviewer markdown={record?.description ?? ''} />
-        ),
+        render: (_, record) =>
+          isEmpty(record?.description) ? (
+            NO_DATA_PLACEHOLDER
+          ) : (
+            <RichTextEditorPreviewerNew markdown={record?.description ?? ''} />
+          ),
       },
       {
         title: t('label.role-plural'),
@@ -269,7 +275,7 @@ const PoliciesListPage = () => {
   return (
     <PageLayoutV1 pageTitle={t('label.policy-plural')}>
       <Row
-        className="policies-list-container page-container"
+        className="policies-list-container"
         data-testid="policies-list-container"
         gutter={[0, 16]}>
         <Col span={24}>
@@ -291,17 +297,29 @@ const PoliciesListPage = () => {
         </Col>
         <Col span={24}>
           <Table
-            bordered
-            className="policies-list-table"
             columns={columns}
+            containerClassName="policies-list-table"
+            customPaginationProps={{
+              currentPage,
+              isLoading,
+              showPagination,
+              pageSize,
+              paging,
+              pagingHandler: handlePaging,
+              onShowSizeChange: handlePageSizeChange,
+            }}
             data-testid="policies-list-table"
             dataSource={policies}
             loading={isLoading}
             locale={{
               emptyText: (
                 <ErrorPlaceHolder
+                  className="border-none"
                   heading={t('label.policy')}
                   permission={addPolicyPermission}
+                  permissionValue={t('label.create-entity', {
+                    entity: t('label.policy'),
+                  })}
                   type={ERROR_PLACEHOLDER_TYPE.CREATE}
                   onClick={handleAddPolicy}
                 />
@@ -323,17 +341,6 @@ const PoliciesListPage = () => {
               entityType={EntityType.POLICY}
               visible={!isUndefined(selectedPolicy)}
               onCancel={() => setSelectedPolicy(undefined)}
-            />
-          )}
-        </Col>
-        <Col span={24}>
-          {showPagination && (
-            <NextPrevious
-              currentPage={currentPage}
-              pageSize={pageSize}
-              paging={paging}
-              pagingHandler={handlePaging}
-              onShowSizeChange={handlePageSizeChange}
             />
           )}
         </Col>

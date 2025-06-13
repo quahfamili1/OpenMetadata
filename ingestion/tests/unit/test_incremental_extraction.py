@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -23,6 +23,7 @@ from metadata.generated.schema.entity.services.ingestionPipelines.ingestionPipel
 from metadata.generated.schema.metadataIngestion.databaseServiceMetadataPipeline import (
     Incremental,
 )
+from metadata.generated.schema.type.basic import Timestamp
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
 from metadata.ingestion.source.database.incremental_metadata_extraction import (
     MILLISECONDS_IN_ONE_DAY,
@@ -36,10 +37,12 @@ INCREMENTAL_CONFIG_ENABLED = {
     "input": {
         "incremental_config": Incremental(enabled=True, safetyMarginDays=1),
         "pipeline_runs": [
-            PipelineStatus(runId=1, pipelineState=PipelineState.failed),
+            PipelineStatus(runId="1", pipelineState=PipelineState.failed),
             PipelineStatus(
-                runId=2,
-                startDate=int(datetime.timestamp(datetime(2024, 1, 1)) * 1000),
+                runId="2",
+                startDate=Timestamp(
+                    int(datetime.timestamp(datetime(2024, 1, 1)) * 1000)
+                ),
                 pipelineState=PipelineState.success,
             ),
         ],
@@ -118,8 +121,8 @@ class IncrementalConfigCreatorTest(TestCase):
         """Returns IncrementalConfig(enabled=False) when self._get_last_success_timestamp() returns None."""
 
         pipeline_runs = [
-            PipelineStatus(runId=1, pipelineState=PipelineState.failed),
-            PipelineStatus(runId=2, pipelineState=PipelineState.failed),
+            PipelineStatus(runId="1", pipelineState=PipelineState.failed),
+            PipelineStatus(runId="2", pipelineState=PipelineState.failed),
         ]
 
         with patch.object(

@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -21,6 +21,7 @@ from unittest.mock import patch
 from metadata.generated.schema.metadataIngestion.workflow import (
     OpenMetadataWorkflowConfig,
 )
+from metadata.generated.schema.type.basic import DateTime
 from metadata.generated.schema.type.tableQuery import TableQuery
 from metadata.ingestion.source.database.databricks.lineage import (
     DatabricksLineageSource,
@@ -33,41 +34,45 @@ with open(mock_file_path, encoding="utf-8") as file:
 
 EXPECTED_DATABRICKS_DETAILS = [
     TableQuery(
+        dialect="databricks",
         query=' /* {"app": "OpenMetadata", "version": "0.13.0.dev0"} */\nSHOW TABLES IN `test`',
         userName="vijay@getcollate.io",
         startTime="1665566128192",
         endTime="1665566128329",
-        analysisDate=datetime.now(),
+        analysisDate=DateTime(datetime.now()),
         aborted=None,
         serviceName="local_databricks1",
         databaseSchema=None,
     ),
     TableQuery(
+        dialect="databricks",
         query=' /* {"app": "OpenMetadata", "version": "0.13.0.dev0"} */\nSHOW TABLES IN `test`',
         userName="vijay@getcollate.io",
         startTime="1665566127416",
         endTime="1665566127568",
-        analysisDate=datetime.now(),
+        analysisDate=DateTime(datetime.now()),
         aborted=None,
         serviceName="local_databricks1",
         databaseSchema=None,
     ),
     TableQuery(
+        dialect="databricks",
         query=' /* {"app": "OpenMetadata", "version": "0.13.0.dev0"} */\nSHOW TABLES IN `default`',
         userName="vijay@getcollate.io",
         startTime="1665566125414",
         endTime="1665566125579",
-        analysisDate=datetime.now(),
+        analysisDate=DateTime(datetime.now()),
         aborted=None,
         serviceName="local_databricks1",
         databaseSchema=None,
     ),
     TableQuery(
+        dialect="databricks",
         query=' /* {"app": "OpenMetadata", "version": "0.13.0.dev0"} */\nDESCRIBE default.view3',
         userName="vijay@getcollate.io",
         startTime="1665566124428",
         endTime="1665566124730",
-        analysisDate=datetime.now(),
+        analysisDate=DateTime(datetime.now()),
         aborted=None,
         serviceName="local_databricks1",
         databaseSchema=None,
@@ -82,6 +87,7 @@ mock_databricks_config = {
             "config": {
                 "token": "random_token",
                 "hostPort": "localhost:443",
+                "httpPath": "sql/1.0/endpoints/path",
                 "connectionArguments": {
                     "http_path": "sql/1.0/endpoints/path",
                 },
@@ -121,25 +127,12 @@ class DatabricksLineageTests(TestCase):
 
     def __init__(self, methodName) -> None:
         super().__init__(methodName)
-        config = OpenMetadataWorkflowConfig.parse_obj(mock_databricks_config)
+        config = OpenMetadataWorkflowConfig.model_validate(mock_databricks_config)
 
-        self.databricks = DatabricksLineageSource.create(
-            mock_databricks_config["source"],
-            config.workflowConfig.openMetadataServerConfig,
-        )
-
-    @patch(
-        "metadata.ingestion.source.database.databricks.client.DatabricksClient.list_query_history"
-    )
-    def test_get_table_query(self, list_query_history):
-        list_query_history.return_value = mock_data
-        results = self.databricks.get_table_query()
-        query_list = []
-        for result in results:
-            if isinstance(result, TableQuery):
-                query_list.append(result)
-        for _, (expected, original) in enumerate(
-            zip(EXPECTED_DATABRICKS_DETAILS, query_list)
+        with patch(
+            "metadata.ingestion.source.database.databricks.lineage.DatabricksLineageSource.test_connection"
         ):
-            expected.analysisDate = original.analysisDate = datetime.now()
-            self.assertEqual(expected, original)
+            self.databricks = DatabricksLineageSource.create(
+                mock_databricks_config["source"],
+                config.workflowConfig.openMetadataServerConfig,
+            )

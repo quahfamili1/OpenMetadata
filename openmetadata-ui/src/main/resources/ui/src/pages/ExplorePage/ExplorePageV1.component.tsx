@@ -11,8 +11,7 @@
  *  limitations under the License.
  */
 
-import { Typography } from 'antd';
-import { get, isEmpty, isNil, isString, lowerCase } from 'lodash';
+import { get, isEmpty, isNil, isString } from 'lodash';
 import Qs from 'qs';
 import React, {
   FunctionComponent,
@@ -21,7 +20,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { useHistory, useLocation, useParams } from 'react-router-dom';
+import { useHistory, useParams } from 'react-router-dom';
 import { withAdvanceSearch } from '../../components/AppRouter/withAdvanceSearch';
 import { useAdvanceSearch } from '../../components/Explore/AdvanceSearchProvider/AdvanceSearchProvider.component';
 import {
@@ -31,13 +30,8 @@ import {
   UrlParams,
 } from '../../components/Explore/ExplorePage.interface';
 import ExploreV1 from '../../components/ExploreV1/ExploreV1.component';
-import { getExplorePath, PAGE_SIZE } from '../../constants/constants';
-import {
-  COMMON_FILTERS_FOR_DIFFERENT_TABS,
-  ES_EXCEPTION_SHARDS_FAILED,
-  FAILED_TO_FIND_INDEX_ERROR,
-  INITIAL_SORT_FIELD,
-} from '../../constants/explore.constants';
+import { PAGE_SIZE } from '../../constants/constants';
+import { COMMON_FILTERS_FOR_DIFFERENT_TABS } from '../../constants/explore.constants';
 import {
   mockSearchData,
   MOCK_EXPLORE_PAGE_COUNT,
@@ -46,18 +40,23 @@ import { useTourProvider } from '../../context/TourProvider/TourProvider';
 import { SORT_ORDER } from '../../enums/common.enum';
 import { EntityType } from '../../enums/entity.enum';
 import { SearchIndex } from '../../enums/search.enum';
+import { withPageLayout } from '../../hoc/withPageLayout';
 import { useApplicationStore } from '../../hooks/useApplicationStore';
+import useCustomLocation from '../../hooks/useCustomLocation/useCustomLocation';
+import { useSearchStore } from '../../hooks/useSearchStore';
 import { Aggregations, SearchResponse } from '../../interface/search.interface';
-import { searchQuery } from '../../rest/searchAPI';
-import { getCountBadge } from '../../utils/CommonUtils';
-import { findActiveSearchIndex } from '../../utils/Explore.utils';
-import { getCombinedQueryFilterObject } from '../../utils/ExplorePage/ExplorePageUtils';
+import {
+  extractTermKeys,
+  fetchEntityData,
+  findActiveSearchIndex,
+  generateTabItems,
+  parseSearchParams,
+} from '../../utils/ExploreUtils';
+import i18n from '../../utils/i18next/LocalUtil';
+import { getExplorePath } from '../../utils/RouterUtils';
 import searchClassBase from '../../utils/SearchClassBase';
-import { escapeESReservedCharacters } from '../../utils/StringsUtils';
-import { showErrorToast } from '../../utils/ToastUtils';
 import {
   QueryFieldInterface,
-  QueryFieldValueInterface,
   QueryFilterInterface,
 } from './ExplorePage.interface';
 
@@ -65,10 +64,12 @@ const ExplorePageV1: FunctionComponent = () => {
   const tabsInfo = searchClassBase.getTabsInfo();
   const EntityTypeSearchIndexMapping =
     searchClassBase.getEntityTypeSearchIndexMapping();
-  const location = useLocation();
+  const location = useCustomLocation();
   const history = useHistory();
   const { isTourOpen } = useTourProvider();
   const TABS_SEARCH_INDEXES = Object.keys(tabsInfo) as ExploreSearchIndex[];
+  const { isNLPActive, isNLPEnabled } = useSearchStore();
+  const isNLPRequestEnabled = isNLPEnabled && isNLPActive;
 
   const { tab } = useParams<UrlParams>();
 
@@ -88,7 +89,7 @@ const ExplorePageV1: FunctionComponent = () => {
   const [updatedAggregations, setUpdatedAggregations] =
     useState<Aggregations>();
 
-  const [advancesSearchQuickFilters, setAdvancedSearchQuickFilters] =
+  const [advancedSearchQuickFilters, setAdvancedSearchQuickFilters] =
     useState<QueryFilterInterface>();
 
   const [searchHitCounts, setSearchHitCounts] = useState<SearchHitCounts>();
@@ -97,26 +98,17 @@ const ExplorePageV1: FunctionComponent = () => {
 
   const { queryFilter } = useAdvanceSearch();
 
-  const [parsedSearch, searchQueryParam, sortValue, sortOrder] = useMemo(() => {
-    const parsedSearch = Qs.parse(
-      location.search.startsWith('?')
-        ? location.search.substring(1)
-        : location.search
-    );
-
-    const searchQueryParam = isString(parsedSearch.search)
-      ? parsedSearch.search
-      : '';
-
-    const sortValue = isString(parsedSearch.sort)
-      ? parsedSearch.sort
-      : INITIAL_SORT_FIELD;
-
-    const sortOrder = isString(parsedSearch.sortOrder)
-      ? parsedSearch.sortOrder
-      : SORT_ORDER.DESC;
-
-    return [parsedSearch, searchQueryParam, sortValue, sortOrder];
+  // Use the utility function to parse search parameters
+  const {
+    parsedSearch,
+    searchQueryParam,
+    sortValue,
+    sortOrder,
+    page,
+    size,
+    showDeleted,
+  } = useMemo(() => {
+    return parseSearchParams(location.search);
   }, [location.search]);
 
   const handlePageChange: ExploreProps['onChangePage'] = (page, size) => {
@@ -150,24 +142,26 @@ const ExplorePageV1: FunctionComponent = () => {
   // Filters that can be common for all the Entities Ex. Tables, Topics, etc.
   const commonQuickFilters = useMemo(() => {
     const mustField: QueryFieldInterface[] = get(
-      advancesSearchQuickFilters,
+      advancedSearchQuickFilters,
       'query.bool.must',
       []
     );
 
     // Getting the filters that can be common for all the Entities
     const must = mustField.filter((filterCategory: QueryFieldInterface) => {
-      const shouldField: QueryFieldValueInterface[] = get(
+      const shouldField: QueryFieldInterface[] = get(
         filterCategory,
         'bool.should',
         []
       );
 
+      const terms = extractTermKeys(shouldField);
+
       // check if the filter category is present in the common filters array
       const isCommonFieldPresent =
         !isEmpty(shouldField) &&
-        COMMON_FILTERS_FOR_DIFFERENT_TABS.find(
-          (value) => value === Object.keys(shouldField[0].term)[0]
+        COMMON_FILTERS_FOR_DIFFERENT_TABS.find((value) =>
+          terms.includes(value)
         );
 
       return isCommonFieldPresent;
@@ -182,7 +176,7 @@ const ExplorePageV1: FunctionComponent = () => {
             },
           },
         };
-  }, [advancesSearchQuickFilters]);
+  }, [advancedSearchQuickFilters]);
 
   const handleSearchIndexChange: (nSearchIndex: ExploreSearchIndex) => void =
     useCallback(
@@ -229,96 +223,48 @@ const ExplorePageV1: FunctionComponent = () => {
   };
 
   const searchIndex = useMemo(() => {
+    if (!searchQueryParam) {
+      return SearchIndex.DATA_ASSET as unknown as ExploreSearchIndex;
+    }
+
     const tabInfo = Object.entries(tabsInfo).find(
       ([, tabInfo]) => tabInfo.path === tab
     );
     if (searchHitCounts && isNil(tabInfo)) {
       const activeKey = findActiveSearchIndex(searchHitCounts, tabsInfo);
 
-      return activeKey ?? SearchIndex.TABLE;
+      return (
+        activeKey ?? (SearchIndex.DATA_ASSET as unknown as ExploreSearchIndex)
+      );
     }
 
     return !isNil(tabInfo)
       ? (tabInfo[0] as ExploreSearchIndex)
-      : SearchIndex.TABLE;
-  }, [tab, searchHitCounts]);
+      : (SearchIndex.DATA_ASSET as unknown as ExploreSearchIndex);
+  }, [tab, searchHitCounts, searchQueryParam]);
 
+  // Use the utility function to generate tab items
   const tabItems = useMemo(() => {
-    const items = Object.entries(tabsInfo).map(
-      ([tabSearchIndex, tabDetail]) => {
-        const Icon = tabDetail.icon as React.FC;
-
-        return {
-          key: tabSearchIndex,
-          label: (
-            <div
-              className="d-flex items-center justify-between"
-              data-testid={`${lowerCase(tabDetail.label)}-tab`}>
-              <div className="d-flex items-center">
-                <span className="explore-icon d-flex m-r-xs">
-                  <Icon />
-                </span>
-                <Typography.Text
-                  className={
-                    tabSearchIndex === searchIndex ? 'text-primary' : ''
-                  }>
-                  {tabDetail.label}
-                </Typography.Text>
-              </div>
-              <span>
-                {!isNil(searchHitCounts)
-                  ? getCountBadge(
-                      searchHitCounts[tabSearchIndex as ExploreSearchIndex],
-                      '',
-                      tabSearchIndex === searchIndex
-                    )
-                  : getCountBadge()}
-              </span>
-            </div>
-          ),
-          count: searchHitCounts
-            ? searchHitCounts[tabSearchIndex as ExploreSearchIndex]
-            : 0,
-        };
-      }
-    );
+    const items = generateTabItems(tabsInfo, searchHitCounts, searchIndex);
 
     return searchQueryParam
       ? items.filter((tabItem) => {
           return tabItem.count > 0 || tabItem.key === searchCriteria;
         })
       : items;
-  }, [tabsInfo, searchHitCounts, searchIndex]);
-
-  const page = useMemo(() => {
-    const pageParam = parsedSearch.page;
-    if (!isString(pageParam) || isNaN(Number.parseInt(pageParam))) {
-      return 1;
-    }
-
-    return Number.parseInt(pageParam);
-  }, [parsedSearch.page]);
-
-  const size = useMemo(() => {
-    const sizeParam = parsedSearch.size;
-    if (!isString(sizeParam) || isNaN(Number.parseInt(sizeParam))) {
-      return PAGE_SIZE;
-    }
-
-    return Number.parseInt(sizeParam);
-  }, [parsedSearch.size]);
+  }, [
+    tabsInfo,
+    searchHitCounts,
+    searchIndex,
+    searchQueryParam,
+    searchCriteria,
+  ]);
 
   useEffect(() => {
     if (!isEmpty(parsedSearch)) {
       handlePageChange(page, size);
     }
   }, [page, size, parsedSearch]);
-
-  const showDeleted = useMemo(() => {
-    const showDeletedParam = parsedSearch.showDeleted;
-
-    return showDeletedParam === 'true';
-  }, [parsedSearch.showDeleted]);
 
   const getAdvancedSearchQuickFilters = useCallback(() => {
     if (!isString(parsedSearch.quickFilter)) {
@@ -339,80 +285,58 @@ const ExplorePageV1: FunctionComponent = () => {
     }
   }, [parsedSearch]);
 
-  const fetchEntityCount = () => {
-    const updatedQuickFilters = getAdvancedSearchQuickFilters();
-
-    const combinedQueryFilter = getCombinedQueryFilterObject(
-      updatedQuickFilters as QueryFilterInterface,
-      queryFilter as unknown as QueryFilterInterface
-    );
-
+  const performFetch = async () => {
     setIsLoading(true);
-    Promise.all([
-      searchQuery({
-        query: !isEmpty(searchQueryParam)
-          ? escapeESReservedCharacters(searchQueryParam)
-          : '',
+
+    try {
+      await fetchEntityData({
+        searchQueryParam,
+        tabsInfo,
+        updatedQuickFilters: getAdvancedSearchQuickFilters(),
+        queryFilter,
         searchIndex,
-        queryFilter: combinedQueryFilter,
-        sortField: sortValue,
-        sortOrder: sortOrder,
-        pageNumber: page,
-        pageSize: size,
-        includeDeleted: showDeleted,
-      })
-        .then((res) => res)
-        .then((res) => {
-          setSearchResults(res);
-          setUpdatedAggregations(res.aggregations);
-        }),
-      searchQuery({
-        query: escapeESReservedCharacters(searchQueryParam),
-        pageNumber: 0,
-        pageSize: 0,
-        queryFilter: combinedQueryFilter,
-        searchIndex: SearchIndex.ALL,
-        includeDeleted: showDeleted,
-        trackTotalHits: true,
-        fetchSource: false,
-        filters: '',
-      }).then((res) => {
-        const buckets = res.aggregations['entityType'].buckets;
-        const counts: Record<string, number> = {};
-
-        buckets.forEach((item) => {
-          const searchIndexKey =
-            item && EntityTypeSearchIndexMapping[item.key as EntityType];
-
-          if (
-            TABS_SEARCH_INDEXES.includes(searchIndexKey as ExploreSearchIndex)
-          ) {
-            counts[searchIndexKey ?? ''] = item.doc_count;
-          }
-        });
-        setSearchHitCounts(counts as SearchHitCounts);
-      }),
-    ])
-      .catch((error) => {
-        if (
-          error.response?.data.message.includes(FAILED_TO_FIND_INDEX_ERROR) ||
-          error.response?.data.message.includes(ES_EXCEPTION_SHARDS_FAILED)
-        ) {
-          setShowIndexNotFoundAlert(true);
-        } else {
-          showErrorToast(error);
-        }
-      })
-
-      .finally(() => setIsLoading(false));
+        showDeleted,
+        sortValue,
+        sortOrder,
+        page,
+        size,
+        isNLPRequestEnabled,
+        tab,
+        TABS_SEARCH_INDEXES,
+        EntityTypeSearchIndexMapping: EntityTypeSearchIndexMapping as Record<
+          EntityType,
+          ExploreSearchIndex
+        >,
+        setSearchHitCounts,
+        setSearchResults,
+        setUpdatedAggregations,
+        setShowIndexNotFoundAlert,
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  // Effect for handling tour
   useEffect(() => {
     if (isTourOpen) {
       setSearchHitCounts(MOCK_EXPLORE_PAGE_COUNT);
-    } else {
-      fetchEntityCount();
     }
+  }, [isTourOpen]);
+
+  // Create a dependency string to trigger fetch only when dependencies actually change
+  const fetchDependencies = useMemo(() => {
+    return JSON.stringify({
+      quickFilter: parsedSearch.quickFilter,
+      queryFilter,
+      searchQueryParam,
+      sortValue,
+      sortOrder,
+      showDeleted,
+      page,
+      size,
+      searchIndex,
+    });
   }, [
     parsedSearch.quickFilter,
     queryFilter,
@@ -420,10 +344,16 @@ const ExplorePageV1: FunctionComponent = () => {
     sortValue,
     sortOrder,
     showDeleted,
-    searchIndex,
     page,
     size,
+    searchIndex,
   ]);
+
+  useEffect(() => {
+    if (!isTourOpen) {
+      performFetch();
+    }
+  }, [isTourOpen, fetchDependencies]);
 
   const handleAdvanceSearchQuickFiltersChange = useCallback(
     (filter?: QueryFilterInterface) => {
@@ -440,7 +370,7 @@ const ExplorePageV1: FunctionComponent = () => {
       aggregations={updatedAggregations}
       isElasticSearchIssue={showIndexNotFoundAlert}
       loading={isLoading && !isTourOpen}
-      quickFilters={advancesSearchQuickFilters}
+      quickFilters={advancedSearchQuickFilters}
       searchIndex={searchIndex}
       searchResults={
         isTourOpen
@@ -465,4 +395,6 @@ const ExplorePageV1: FunctionComponent = () => {
   );
 };
 
-export default withAdvanceSearch(ExplorePageV1);
+export default withPageLayout(i18n.t('label.explore'))(
+  withAdvanceSearch(ExplorePageV1)
+);

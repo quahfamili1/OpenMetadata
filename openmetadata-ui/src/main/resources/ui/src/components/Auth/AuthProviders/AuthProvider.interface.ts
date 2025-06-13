@@ -12,15 +12,10 @@
  */
 
 import { Profile } from 'oidc-client';
-import { ComponentType, ReactNode } from 'react';
 import { AuthenticationConfiguration } from '../../../generated/configuration/authenticationConfiguration';
 import { AuthorizerConfiguration } from '../../../generated/configuration/authorizerConfiguration';
 import { User } from '../../../generated/entity/teams/user';
-
-export interface AuthProviderProps {
-  childComponentType: ComponentType;
-  children?: ReactNode;
-}
+import { AccessTokenResponse } from '../../../rest/auth-API';
 
 export type UserProfile = {
   email: string;
@@ -37,14 +32,11 @@ export type OidcUser = {
 
 export interface AuthenticatorRef {
   invokeLogin: () => void;
-  invokeLogout: () => void;
-  renewIdToken: () => Promise<string>;
-}
-
-export enum JWT_PRINCIPAL_CLAIMS {
-  EMAIL = 'email',
-  PREFERRED_USERNAME = 'preferred_username',
-  SUB = 'sub',
+  invokeLogout: () => Promise<void>;
+  renewIdToken: () =>
+    | Promise<string>
+    | Promise<AccessTokenResponse>
+    | Promise<void>;
 }
 
 export interface IAuthContext {
@@ -54,16 +46,12 @@ export interface IAuthContext {
   authorizerConfig?: AuthorizerConfiguration;
   isSigningUp: boolean;
   setIsSigningUp: (isSigningUp: boolean) => void;
-  onLoginHandler: () => void;
-  onLogoutHandler: () => void;
   currentUser?: User;
   newUser?: UserProfile;
   updateNewUser: (user: UserProfile) => void;
-  handleSuccessfulLogin: (user: OidcUser) => void;
-  handleFailedLogin: () => void;
-  updateAxiosInterceptors: () => void;
   updateCurrentUser: (user: User) => void;
   jwtPrincipalClaims: string[];
+  jwtPrincipalClaimsMapping: string[];
 }
 
 export type AuthenticationConfigurationWithScope =

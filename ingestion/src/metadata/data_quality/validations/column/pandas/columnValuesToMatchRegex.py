@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -13,7 +13,7 @@
 Validator for column values to match regex test case
 """
 
-from typing import Optional
+from typing import Optional, Tuple
 
 from metadata.data_quality.validations.column.base.columnValuesToMatchRegex import (
     BaseColumnValuesToMatchRegexValidator,
@@ -37,20 +37,26 @@ class ColumnValuesToMatchRegexValidator(
             SQALikeColumn: column
         """
         return self.get_column_name(
-            self.test_case.entityLink.__root__,
+            self.test_case.entityLink.root,
             self.runner,
         )
 
     def _run_results(
-        self, metric: Metrics, column: SQALikeColumn, **kwargs
-    ) -> Optional[int]:
+        self, metric: Tuple[Metrics], column: SQALikeColumn, **kwargs
+    ) -> Tuple[Optional[int], Optional[int]]:
         """compute result of the test case
 
         Args:
             metric: metric
             column: column
         """
-        return self.run_dataframe_results(self.runner, metric, column, **kwargs)
+        res = {}
+        for mtr in metric:
+            res[mtr.name] = self.run_dataframe_results(
+                self.runner, mtr, column, **kwargs
+            )
+
+        return res.get(Metrics.COUNT.name), res.get(Metrics.REGEX_COUNT.name)
 
     def compute_row_count(self, column: SQALikeColumn):
         """Compute row count for the given column

@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -200,7 +200,7 @@ class AirflowLineageRunner:
             return self.metadata.patch(
                 entity=Pipeline,
                 source=pipeline,
-                destination=pipeline.copy(update=pipeline_request.__dict__),
+                destination=pipeline.model_copy(update=pipeline_request.__dict__),
                 allowed_fields=ALLOWED_COMMON_PATCH_FIELDS,
                 restrict_update_fields=RESTRICT_UPDATE_LIST,
             )
@@ -282,7 +282,7 @@ class AirflowLineageRunner:
 
         for status in pipeline_status_list:
             self.metadata.add_pipeline_status(
-                fqn=pipeline.fullyQualifiedName.__root__, status=status
+                fqn=pipeline.fullyQualifiedName.root, status=status
             )
 
     def add_lineage(self, pipeline: Pipeline, xlets: XLets) -> None:
@@ -327,12 +327,12 @@ class AirflowLineageRunner:
                     else:
                         self.dag.log.warning(
                             f"Could not find [{to_xlet.entity.__name__}] [{to_xlet.fqn}] from "
-                            f"[{pipeline.fullyQualifiedName.__root__}] outlets"
+                            f"[{pipeline.fullyQualifiedName.root}] outlets"
                         )
             else:
                 self.dag.log.warning(
                     f"Could not find [{from_xlet.entity.__name__}] [{from_xlet.fqn}] from "
-                    f"[{pipeline.fullyQualifiedName.__root__}] inlets"
+                    f"[{pipeline.fullyQualifiedName.root}] inlets"
                 )
 
     def clean_lineage(self, pipeline: Pipeline, xlets: XLets):
@@ -343,7 +343,7 @@ class AirflowLineageRunner:
         """
         lineage_data = self.metadata.get_lineage_by_name(
             entity=Pipeline,
-            fqn=pipeline.fullyQualifiedName.__root__,
+            fqn=pipeline.fullyQualifiedName.root,
             up_depth=1,
             down_depth=1,
         )

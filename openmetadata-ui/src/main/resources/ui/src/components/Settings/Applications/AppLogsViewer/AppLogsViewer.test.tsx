@@ -13,7 +13,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
+import { ReactComponent as IconSuccessBadge } from '../../../../assets/svg/success-badge.svg';
 import {
+  ErrorSource,
   ScheduleTimeline,
   Status,
 } from '../../../../generated/entity/applications/appRunRecord';
@@ -54,6 +56,16 @@ jest.mock('../../../common/Badge/Badge.component', () =>
     return <div data-testid="app-badge">{`${label}-AppBadge`}</div>;
   })
 );
+
+jest.mock('../../../../constants/constants', () => ({
+  ICON_DIMENSION: {
+    with: 14,
+    height: 14,
+  },
+  STATUS_ICON: {
+    success: IconSuccessBadge,
+  },
+}));
 
 const mockProps1 = {
   data: {
@@ -146,10 +158,10 @@ const mockProps5 = {
   data: {
     ...mockProps1.data,
     successContext: {
-      stats: null,
+      stats: undefined,
     },
     failureContext: {
-      stats: null,
+      stats: undefined,
     },
   },
 };
@@ -163,7 +175,7 @@ const mockProps6 = {
     failureContext: {
       failure: {
         message: 'Reindexing Job Has Encountered an Exception.',
-        errorSource: 'Job',
+        errorSource: ErrorSource.Job,
         failedEntities: [],
       },
     },
@@ -175,7 +187,7 @@ describe('AppLogsViewer component', () => {
     render(<AppLogsViewer {...mockProps1} />);
 
     expect(screen.getByText('label.status:')).toBeInTheDocument();
-    expect(screen.getByText('label.success')).toBeInTheDocument();
+    expect(screen.getByText('Success')).toBeInTheDocument();
     expect(screen.getByText('label.index-states:')).toBeInTheDocument();
     expect(screen.getAllByText('Badge')).toHaveLength(3);
     expect(screen.getByText('label.last-updated:')).toBeInTheDocument();

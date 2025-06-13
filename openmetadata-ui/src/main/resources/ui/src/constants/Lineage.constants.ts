@@ -19,14 +19,18 @@ import { SearchIndex } from '../enums/search.enum';
 import { Source } from '../generated/type/entityLineage';
 
 export const FOREIGN_OBJECT_SIZE = 40;
-export const ZOOM_VALUE = 0.75;
+export const ZOOM_VALUE = 0.65;
 export const MIN_ZOOM_VALUE = 0.1;
 export const MAX_ZOOM_VALUE = 2.5;
-export const ZOOM_SLIDER_STEP = 0.1;
-export const ZOOM_BUTTON_STEP = 0.25;
-export const ZOOM_TRANSITION_DURATION = 800;
 
-export const PIPELINE_EDGE_WIDTH = 200;
+export const ZOOM_TRANSITION_DURATION = 800;
+export const DATATYPES_HAVING_SUBFIELDS = [
+  'RECORD',
+  'STRUCT',
+  'ARRAY',
+  'UNION',
+  'TABLE',
+];
 
 export const entityData = [
   {
@@ -50,6 +54,10 @@ export const entityData = [
     label: t('label.container-plural'),
   },
   {
+    type: SearchIndex.PIPELINE,
+    label: t('label.pipeline-plural'),
+  },
+  {
     type: SearchIndex.SEARCH_INDEX,
     label: t('label.search-index-plural'),
   },
@@ -57,10 +65,15 @@ export const entityData = [
     type: SearchIndex.DASHBOARD_DATA_MODEL,
     label: t('label.data-model-plural'),
   },
+  {
+    type: SearchIndex.API_ENDPOINT_INDEX,
+    label: t('label.api-endpoint-plural'),
+  },
+  {
+    type: SearchIndex.METRIC_SEARCH_INDEX,
+    label: t('label.metric-plural'),
+  },
 ];
-
-export const POSITION_X = 150;
-export const POSITION_Y = 60;
 
 export const NODE_WIDTH = 400;
 export const NODE_HEIGHT = 90;
@@ -72,12 +85,13 @@ export const ELEMENT_DELETE_STATE = {
 
 export const LINEAGE_DEFAULT_QUICK_FILTERS = [
   EntityFields.DOMAIN,
-  EntityFields.OWNER,
+  EntityFields.OWNERS,
   EntityFields.TAG,
   EntityFields.COLUMN,
 ];
 
 export const LINEAGE_SOURCE: { [key in Source]: string } = {
+  [Source.ChildAssets]: 'Child Assets',
   [Source.DashboardLineage]: 'Dashboard Lineage',
   [Source.DbtLineage]: 'dbt Lineage',
   [Source.Manual]: 'Manual',
@@ -86,6 +100,7 @@ export const LINEAGE_SOURCE: { [key in Source]: string } = {
   [Source.SparkLineage]: 'Spark Lineage',
   [Source.ViewLineage]: 'View Lineage',
   [Source.OpenLineage]: 'OpenLineage',
+  [Source.CrossDatabaseLineage]: 'Cross Database Lineage',
   [Source.ExternalTableLineage]: 'External Table Lineage',
 };
 
@@ -97,6 +112,7 @@ export const LINEAGE_COLUMN_NODE_SUPPORTED = [
   EntityType.CONTAINER,
   EntityType.TOPIC,
   EntityType.SEARCH_INDEX,
+  EntityType.API_ENDPOINT,
 ];
 
 export const LINEAGE_EXPORT_HEADERS = [
@@ -105,10 +121,14 @@ export const LINEAGE_EXPORT_HEADERS = [
   { field: 'fullyQualifiedName', title: 'Fully Qualified Name' },
   { field: 'entityType', title: 'Entity Type' },
   { field: 'direction', title: 'Direction' },
-  { field: 'owner', title: 'Owner' },
+  { field: 'owners', title: 'Owner' },
   { field: 'domain', title: 'Domain' },
   { field: 'tags', title: 'Tags' },
   { field: 'tier', title: 'Tier' },
   { field: 'glossaryTerms', title: 'Glossary Terms' },
   { field: 'depth', title: 'Level' },
 ];
+
+export const INITIAL_NODE_ITEMS_LENGTH = 50;
+export const NODE_ITEMS_PAGE_SIZE = 50;
+export const DEBOUNCE_TIMEOUT = 300;

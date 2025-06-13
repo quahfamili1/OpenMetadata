@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -84,21 +84,25 @@ class BaseColumnValuesToBeBetweenValidator(BaseTestValidator):
         if type(max_res) is date:  # pylint: disable=unidiomatic-typecheck
             max_res = self._convert_date_to_datetime(max_res, time.max)
 
-        min_bound = self.get_test_case_param_value(
-            self.test_case.parameterValues,  # type: ignore
-            "minValue",
-            type_=datetime.fromtimestamp if is_date_time(column.type) else float,
-            default=datetime.min if is_date_time(column.type) else float("-inf"),
-            pre_processor=convert_timestamp if is_date_time(column.type) else None,
-        )
+        if is_date_time(column.type):
+            min_bound = self.get_test_case_param_value(
+                self.test_case.parameterValues,  # type: ignore
+                "minValue",
+                type_=datetime.fromtimestamp,
+                default=datetime.min,
+                pre_processor=convert_timestamp,
+            )
 
-        max_bound = self.get_test_case_param_value(
-            self.test_case.parameterValues,  # type: ignore
-            "maxValue",
-            type_=datetime.fromtimestamp if is_date_time(column.type) else float,
-            default=datetime.max if is_date_time(column.type) else float("inf"),
-            pre_processor=convert_timestamp if is_date_time(column.type) else None,
-        )
+            max_bound = self.get_test_case_param_value(
+                self.test_case.parameterValues,  # type: ignore
+                "maxValue",
+                type_=datetime.fromtimestamp,
+                default=datetime.max,
+                pre_processor=convert_timestamp,
+            )
+        else:
+            min_bound = self.get_min_bound("minValue")
+            max_bound = self.get_max_bound("maxValue")
 
         if self.test_case.computePassedFailedRowCount:
             row_count, failed_rows = self.get_row_count(min_bound, max_bound)
@@ -115,6 +119,12 @@ class BaseColumnValuesToBeBetweenValidator(BaseTestValidator):
             ],
             row_count=row_count,
             failed_rows=failed_rows,
+            min_bound=min_bound
+            if not isinstance(min_bound, (datetime, date))
+            else None,
+            max_bound=max_bound
+            if not isinstance(min_bound, (datetime, date))
+            else None,
         )
 
     @abstractmethod

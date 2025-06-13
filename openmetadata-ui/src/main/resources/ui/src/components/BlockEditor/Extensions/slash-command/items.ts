@@ -12,6 +12,7 @@
  */
 import { Editor, Range } from '@tiptap/core';
 import HashtagImage from '../../../../assets/img/ic-format-hashtag.png';
+import MathEquationImage from '../../../../assets/img/ic-format-math-equation.png';
 import BulletListImage from '../../../../assets/img/ic-slash-bullet-list.png';
 import DividerImage from '../../../../assets/img/ic-slash-divider.png';
 import H1Image from '../../../../assets/img/ic-slash-h1.png';
@@ -21,11 +22,15 @@ import NumberedListImage from '../../../../assets/img/ic-slash-numbered-list.png
 import QuoteImage from '../../../../assets/img/ic-slash-quote.png';
 import TextImage from '../../../../assets/img/ic-slash-text.png';
 import TaskListIcon from '../../../../assets/img/ic-task-list.png';
+import IconFormatAttachment from '../../../../assets/svg/ic-format-attachment.svg';
+import IconFormatAudio from '../../../../assets/svg/ic-format-audio.svg';
 import IconFormatCallout from '../../../../assets/svg/ic-format-callout.svg';
 import CodeBlockImage from '../../../../assets/svg/ic-format-code-block.svg';
 import IconFormatImage from '../../../../assets/svg/ic-format-image.svg';
 import IconTable from '../../../../assets/svg/ic-format-table.svg';
+import IconFormatVideo from '../../../../assets/svg/ic-format-video.svg';
 import MentionImage from '../../../../assets/svg/ic-mentions.svg';
+import { FileType } from '../../BlockEditor.interface';
 
 export enum SuggestionItemType {
   BASIC_BLOCKS = 'Basic',
@@ -44,6 +49,8 @@ export interface SuggestionItem {
   imgSrc: string;
   searchTerms: string[];
   command: (props: CommandProps) => void;
+  isFileCommand?: boolean;
+  isSvg?: boolean;
 }
 
 export const getSuggestionItems = (props: {
@@ -150,6 +157,7 @@ export const getSuggestionItems = (props: {
         editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
       imgSrc: CodeBlockImage,
       searchTerms: ['codeblock'],
+      isSvg: true,
     },
 
     {
@@ -176,6 +184,7 @@ export const getSuggestionItems = (props: {
       },
       imgSrc: MentionImage,
       searchTerms: ['user', 'mention'],
+      isSvg: true,
     },
     {
       title: 'Link data asset',
@@ -192,10 +201,91 @@ export const getSuggestionItems = (props: {
       description: 'Add an image',
       type: SuggestionItemType.ADVANCED_BLOCKS,
       command: ({ editor, range }) => {
-        editor.chain().focus().deleteRange(range).setImage({ src: '' }).run();
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .setFile({
+            url: '',
+            fileName: '',
+            fileSize: null,
+            mimeType: FileType.IMAGE,
+            type: FileType.IMAGE,
+            isImage: true,
+          })
+          .run();
       },
       imgSrc: IconFormatImage,
       searchTerms: ['image', 'media'],
+    },
+    {
+      title: 'Video',
+      description: 'Add a video',
+      type: SuggestionItemType.ADVANCED_BLOCKS,
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .setFile({
+            url: '',
+            fileName: '',
+            fileSize: null,
+            mimeType: FileType.VIDEO,
+            type: FileType.VIDEO,
+          })
+          .run();
+      },
+      imgSrc: IconFormatVideo,
+      searchTerms: ['video', 'media', 'player'],
+      isFileCommand: true,
+      isSvg: true,
+    },
+    {
+      title: 'Audio',
+      description: 'Add audio',
+      type: SuggestionItemType.ADVANCED_BLOCKS,
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .setFile({
+            url: '',
+            fileName: '',
+            fileSize: null,
+            mimeType: FileType.AUDIO,
+            type: FileType.AUDIO,
+          })
+          .run();
+      },
+      imgSrc: IconFormatAudio,
+      searchTerms: ['audio', 'sound', 'music'],
+      isFileCommand: true,
+      isSvg: true,
+    },
+    {
+      title: 'File',
+      description: 'Add a file attachment',
+      type: SuggestionItemType.ADVANCED_BLOCKS,
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .setFile({
+            url: '',
+            fileName: '',
+            fileSize: null,
+            mimeType: '',
+            type: FileType.FILE,
+          })
+          .run();
+      },
+      imgSrc: IconFormatAttachment,
+      searchTerms: ['file', 'attachment', 'document'],
+      isFileCommand: true,
+      isSvg: true,
     },
     {
       title: 'Task List',
@@ -216,6 +306,7 @@ export const getSuggestionItems = (props: {
       },
       type: SuggestionItemType.ADVANCED_BLOCKS,
       imgSrc: IconFormatCallout,
+      isSvg: true,
     },
     {
       title: 'Table',
@@ -231,6 +322,29 @@ export const getSuggestionItems = (props: {
       },
       type: SuggestionItemType.ADVANCED_BLOCKS,
       imgSrc: IconTable,
+      isSvg: true,
+    },
+    {
+      title: 'Math Equation',
+      description: 'Add a math equation',
+      searchTerms: ['math', 'equation', 'latex', 'katex'],
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .insertContent({
+            type: 'MathEquation',
+            attrs: {
+              isEditing: true,
+              math_equation: '',
+            },
+          })
+          .run();
+      },
+      type: SuggestionItemType.ADVANCED_BLOCKS,
+      imgSrc: MathEquationImage,
+      isSvg: true,
     },
   ];
 

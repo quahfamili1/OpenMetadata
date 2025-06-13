@@ -21,19 +21,20 @@ import {
   ThreadTaskStatus,
   ThreadType,
 } from '../../../generated/entity/feed/thread';
-import { EntityReference } from '../../../generated/entity/type';
 import { TestCaseResolutionStatus } from '../../../generated/tests/testCaseResolutionStatus';
 import { Paging } from '../../../generated/type/paging';
 
 export interface ActivityFeedProviderContextType {
   loading: boolean;
-  isDrawerLoading: boolean;
+  isPostsLoading?: boolean;
+  isTestCaseResolutionLoading?: boolean;
   entityThread: Thread[];
   selectedThread: Thread | undefined;
   isDrawerOpen: boolean;
   focusReplyEditor: boolean;
   entityPaging: Paging;
   setActiveThread: (thread?: Thread) => void;
+  updateEntityThread: (thread: Thread) => void;
   userId: string;
   deleteFeed: (
     threadId: string,
@@ -55,7 +56,8 @@ export interface ActivityFeedProviderContextType {
     type?: ThreadType,
     entityType?: EntityType,
     fqn?: string,
-    taskStatus?: ThreadTaskStatus
+    taskStatus?: ThreadTaskStatus,
+    limit?: number
   ) => Promise<void>;
   showDrawer: (thread: Thread) => void;
   hideDrawer: () => void;
@@ -69,5 +71,4 @@ export interface ActivityFeedProviderContextType {
   ) => Promise<void>;
   testCaseResolutionStatus: TestCaseResolutionStatus[];
   updateTestCaseIncidentStatus: (status: TestCaseResolutionStatus[]) => void;
-  initialAssignees: EntityReference[];
 }

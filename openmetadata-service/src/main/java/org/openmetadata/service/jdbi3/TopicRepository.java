@@ -43,6 +43,7 @@ import org.openmetadata.schema.type.Field;
 import org.openmetadata.schema.type.Include;
 import org.openmetadata.schema.type.TagLabel;
 import org.openmetadata.schema.type.TaskType;
+import org.openmetadata.schema.type.change.ChangeSource;
 import org.openmetadata.schema.type.topic.CleanupPolicy;
 import org.openmetadata.schema.type.topic.TopicSampleData;
 import org.openmetadata.service.Entity;
@@ -132,7 +133,8 @@ public class TopicRepository extends EntityRepository<Topic> {
   }
 
   @Override
-  public TopicUpdater getUpdater(Topic original, Topic updated, Operation operation) {
+  public EntityRepository<Topic>.EntityUpdater getUpdater(
+      Topic original, Topic updated, Operation operation, ChangeSource changeSource) {
     return new TopicUpdater(original, updated, operation);
   }
 
@@ -379,7 +381,7 @@ public class TopicRepository extends EntityRepository<Topic> {
 
     @Transaction
     @Override
-    public void entitySpecificUpdate() {
+    public void entitySpecificUpdate(boolean consolidatingChanges) {
       recordChange(
           "maximumMessageSize", original.getMaximumMessageSize(), updated.getMaximumMessageSize());
       recordChange(
@@ -410,9 +412,9 @@ public class TopicRepository extends EntityRepository<Topic> {
         updateSchemaFields(
             "messageSchema.schemaFields",
             original.getMessageSchema() == null
-                ? null
-                : original.getMessageSchema().getSchemaFields(),
-            updated.getMessageSchema().getSchemaFields(),
+                ? new ArrayList<>()
+                : listOrEmpty(original.getMessageSchema().getSchemaFields()),
+            listOrEmpty(updated.getMessageSchema().getSchemaFields()),
             EntityUtil.schemaFieldMatch);
       }
       recordChange("topicConfig", original.getTopicConfig(), updated.getTopicConfig());
@@ -489,7 +491,10 @@ public class TopicRepository extends EntityRepository<Topic> {
         if (updated.getChildren() != null && stored.getChildren() != null) {
           String childrenFieldName = EntityUtil.getFieldName(fieldName, updated.getName());
           updateSchemaFields(
-              childrenFieldName, stored.getChildren(), updated.getChildren(), fieldMatch);
+              childrenFieldName,
+              listOrEmpty(stored.getChildren()),
+              listOrEmpty(updated.getChildren()),
+              fieldMatch);
         }
       }
 

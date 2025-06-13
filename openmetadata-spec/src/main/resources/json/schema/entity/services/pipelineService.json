@@ -21,6 +21,7 @@
         "GluePipeline",
         "Airbyte",
         "Fivetran",
+        "Flink",
         "Dagster",
         "Nifi",
         "DomoPipeline",
@@ -29,7 +30,13 @@
         "Spline",
         "Spark",
         "OpenLineage",
-        "KafkaConnect"
+        "KafkaConnect",
+        "DBTCloud",
+        "Matillion",
+        "Stitch",
+        "DataFactory",
+        "Wherescape",
+        "SSIS"
       ],
       "javaEnums": [
         {
@@ -43,6 +50,9 @@
         },
         {
           "name": "Fivetran"
+        },
+        {
+          "name": "Flink"
         },
         {
           "name": "Dagster"
@@ -70,6 +80,24 @@
         },
         {
           "name": "KafkaConnect"
+        },
+        {
+          "name": "DBTCloud"
+        },
+        {
+          "name": "Matillion"
+        },
+        {
+          "name": "DataFactory"
+        },
+        {
+          "name": "Stitch"
+        },
+        {
+          "name": "Wherescape"
+        },
+        {
+          "name": "SSIS"
         }
       ]
     },
@@ -88,6 +116,12 @@
               "$ref": "./connections/pipeline/airflowConnection.json"
             },
             {
+              "$ref": "./connections/pipeline/wherescapeConnection.json"
+            },
+            {
+              "$ref": "./connections/pipeline/ssisConnection.json"
+            },
+            {
               "$ref": "./connections/pipeline/gluePipelineConnection.json"
             },
             {
@@ -95,6 +129,9 @@
             },
             {
               "$ref": "./connections/pipeline/fivetranConnection.json"
+            },
+            {
+              "$ref": "./connections/pipeline/flinkConnection.json"
             },
             {
               "$ref": "./connections/pipeline/dagsterConnection.json"
@@ -122,6 +159,18 @@
             },
             {
               "$ref": "./connections/pipeline/kafkaConnectConnection.json"
+            },
+            {
+              "$ref": "./connections/pipeline/dbtCloudConnection.json"
+            },
+            {
+              "$ref": "./connections/pipeline/matillionConnection.json"
+            },
+            {
+              "$ref": "./connections/pipeline/datafactoryConnection.json"
+            },
+            {
+              "$ref": "./connections/pipeline/stitchConnection.json"
             }
           ]
         }
@@ -176,7 +225,7 @@
       "items": {
         "$ref": "../../type/tagLabel.json"
       },
-      "default": null
+      "default": []
     },
     "pipelines": {
       "description": "References to pipelines deployed for this pipeline service to extract metadata",
@@ -185,15 +234,19 @@
     "connection": {
       "$ref": "#/definitions/pipelineConnection"
     },
-    "owner": {
-      "description": "Owner of this pipeline service.",
-      "$ref": "../../type/entityReference.json"
+    "owners": {
+      "description": "Owners of this pipeline service.",
+      "$ref": "../../type/entityReferenceList.json"
     },
     "href": {
       "description": "Link to the resource corresponding to this pipeline service.",
       "$ref": "../../type/basic.json#/definitions/href"
     },
     "changeDescription": {
+      "description": "Change that lead to this version of the entity.",
+      "$ref": "../../type/entityHistory.json#/definitions/changeDescription"
+    },
+    "incrementalChangeDescription": {
       "description": "Change that lead to this version of the entity.",
       "$ref": "../../type/entityHistory.json#/definitions/changeDescription"
     },
@@ -206,8 +259,16 @@
       "description": "List of data products this entity is part of.",
       "$ref" : "../../type/entityReferenceList.json"
     },
+    "followers": {
+      "description": "Followers of this entity.",
+      "$ref": "../../type/entityReferenceList.json"
+    },
     "domain" : {
       "description": "Domain the Pipeline service belongs to.",
+      "$ref": "../../type/entityReference.json"
+    },
+    "ingestionRunner" : {
+      "description": "The ingestion agent responsible for executing the ingestion pipeline.",
       "$ref": "../../type/entityReference.json"
     }
   },

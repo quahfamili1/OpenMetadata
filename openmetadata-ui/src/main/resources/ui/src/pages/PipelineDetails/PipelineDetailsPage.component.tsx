@@ -21,9 +21,10 @@ import ErrorPlaceHolder from '../../components/common/ErrorWithPlaceholder/Error
 import Loader from '../../components/common/Loader/Loader';
 import { QueryVote } from '../../components/Database/TableQueries/TableQueries.interface';
 import PipelineDetails from '../../components/Pipeline/PipelineDetails/PipelineDetails.component';
-import { getVersionPath } from '../../constants/constants';
+import { ROUTES } from '../../constants/constants';
 import { usePermissionProvider } from '../../context/PermissionProvider/PermissionProvider';
 import { ResourceEntity } from '../../context/PermissionProvider/PermissionProvider.interface';
+import { ClientErrors } from '../../enums/Axios.enum';
 import { ERROR_PLACEHOLDER_TYPE } from '../../enums/common.enum';
 import { EntityType } from '../../enums/entity.enum';
 import { Pipeline } from '../../generated/entity/data/pipeline';
@@ -40,14 +41,11 @@ import {
 import {
   addToRecentViewed,
   getEntityMissingError,
-  sortTagsCaseInsensitive,
 } from '../../utils/CommonUtils';
 import { getEntityName } from '../../utils/EntityUtils';
 import { DEFAULT_ENTITY_PERMISSION } from '../../utils/PermissionsUtils';
-import {
-  defaultFields,
-  getFormattedPipelineDetails,
-} from '../../utils/PipelineDetailsUtils';
+import { defaultFields } from '../../utils/PipelineDetailsUtils';
+import { getVersionPath } from '../../utils/RouterUtils';
 import { showErrorToast } from '../../utils/ToastUtils';
 
 const PipelineDetailsPage = () => {
@@ -83,7 +81,7 @@ const PipelineDetailsPage = () => {
         entityFqn
       );
       setPipelinePermissions(entityPermission);
-    } catch (error) {
+    } catch {
       showErrorToast(
         t('server.fetch-entity-permissions-error', {
           entity: entityFqn,
@@ -135,6 +133,10 @@ const PipelineDetailsPage = () => {
     } catch (error) {
       if ((error as AxiosError).response?.status === 404) {
         setIsError(true);
+      } else if (
+        (error as AxiosError)?.response?.status === ClientErrors.FORBIDDEN
+      ) {
+        history.replace(ROUTES.FORBIDDEN);
       } else {
         showErrorToast(
           error as AxiosError,
@@ -199,10 +201,7 @@ const PipelineDetailsPage = () => {
   const settingsUpdateHandler = async (updatedPipeline: Pipeline) => {
     try {
       const res = await saveUpdatedPipelineData(updatedPipeline);
-      setPipelineDetails({
-        ...res,
-        tags: sortTagsCaseInsensitive(res.tags ?? []),
-      });
+      setPipelineDetails(res);
     } catch (error) {
       showErrorToast(
         error as AxiosError,
@@ -216,8 +215,7 @@ const PipelineDetailsPage = () => {
   const onTaskUpdate = async (jsonPatch: Array<Operation>) => {
     try {
       const response = await patchPipelineDetails(pipelineId, jsonPatch);
-      const formattedPipelineDetails = getFormattedPipelineDetails(response);
-      setPipelineDetails(formattedPipelineDetails);
+      setPipelineDetails(response);
     } catch (error) {
       showErrorToast(error as AxiosError);
     }
@@ -280,7 +278,7 @@ const PipelineDetailsPage = () => {
     const updatedData = data as Pipeline;
 
     setPipelineDetails((data) => ({
-      ...(data ?? updatedData),
+      ...(updatedData ?? data),
       version: updatedData.version,
     }));
   }, []);
@@ -308,7 +306,15 @@ const PipelineDetailsPage = () => {
   }
 
   if (!pipelinePermissions.ViewAll && !pipelinePermissions.ViewBasic) {
-    return <ErrorPlaceHolder type={ERROR_PLACEHOLDER_TYPE.PERMISSION} />;
+    return (
+      <ErrorPlaceHolder
+        className="border-none"
+        permissionValue={t('label.view-entity', {
+          entity: t('label.pipeline-detail-plural'),
+        })}
+        type={ERROR_PLACEHOLDER_TYPE.PERMISSION}
+      />
+    );
   }
 
   return (

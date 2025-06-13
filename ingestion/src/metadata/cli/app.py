@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -19,7 +19,6 @@ from pathlib import Path
 from metadata.config.common import load_config_file
 from metadata.utils.logger import cli_logger
 from metadata.workflow.application import ApplicationWorkflow
-from metadata.workflow.application_output_handler import print_status
 
 logger = cli_logger()
 
@@ -33,8 +32,8 @@ def run_app(config_path: Path) -> None:
 
     try:
         config_dict = load_config_file(config_path)
+        # no logging for config because apps might have custom secrets
         workflow = ApplicationWorkflow.create(config_dict)
-        logger.debug(f"Using config: {workflow.config}")
     except Exception as exc:
         logger.error(f"Error running the application {exc}")
         logger.debug(traceback.format_exc())
@@ -42,5 +41,5 @@ def run_app(config_path: Path) -> None:
 
     workflow.execute()
     workflow.stop()
-    print_status(workflow)
+    workflow.print_status()
     workflow.raise_from_status()

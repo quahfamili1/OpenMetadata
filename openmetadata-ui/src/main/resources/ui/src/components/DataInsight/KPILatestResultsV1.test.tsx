@@ -26,7 +26,7 @@ const mockProps = {
         targetMet: false,
       },
     ],
-    target: '0.5',
+    target: 0.5,
     metricType: 'PERCENTAGE',
     startDate: 1682578800000,
     endDate: 1701417599999,
@@ -42,13 +42,17 @@ const mockProps = {
         targetMet: true,
       },
     ],
-    target: '0.6',
+    target: 0.6,
     metricType: 'PERCENTAGE',
     startDate: 1696876200000,
     endDate: 1706725799999,
     displayName: 'Ownership Coverage',
   },
 } as Record<string, UIKpiResult>;
+
+jest.mock('../../utils/DataInsightUtils', () => ({
+  getKpiResultFeedback: jest.fn(),
+}));
 
 describe('KPILatestResultsV1', () => {
   it('Component. should render', async () => {

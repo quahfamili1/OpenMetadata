@@ -14,6 +14,7 @@ import { CloseOutlined } from '@ant-design/icons';
 import Icon from '@ant-design/icons/lib/components/Icon';
 import {
   Button,
+  Empty,
   Form,
   Space,
   TagProps,
@@ -22,9 +23,16 @@ import {
 } from 'antd';
 import { Key } from 'antd/lib/table/interface';
 import { AxiosError } from 'axios';
-import { debounce, get, isEmpty, isUndefined, pick } from 'lodash';
+import { debounce, get, isEmpty, isNull, isUndefined, pick } from 'lodash';
 import { CustomTagProps } from 'rc-select/lib/BaseSelect';
-import React, { FC, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  FC,
+  ReactElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as ArrowIcon } from '../../../assets/svg/ic-arrow-down.svg';
 import { PAGE_SIZE_LARGE, TEXT_BODY_COLOR } from '../../../constants/constants';
@@ -41,8 +49,13 @@ import {
 import { getEntityName } from '../../../utils/EntityUtils';
 import {
   convertGlossaryTermsToTreeOptions,
-  findGlossaryTermByFqn,
+  filterTreeNodeOptions,
+  findItemByFqn,
 } from '../../../utils/GlossaryUtils';
+import {
+  escapeESReservedCharacters,
+  getEncodedFqn,
+} from '../../../utils/StringsUtils';
 import { getTagDisplay, tagRender } from '../../../utils/TagsUtils';
 import { showErrorToast } from '../../../utils/ToastUtils';
 import { ModifiedGlossaryTerm } from '../../Glossary/GlossaryTermTab/GlossaryTermTab.interface';
@@ -59,7 +72,10 @@ const TreeAsyncSelectList: FC<Omit<AsyncSelectListProps, 'fetchOptions'>> = ({
   initialOptions,
   tagType,
   isSubmitLoading,
+  filterOptions = [],
   onCancel,
+  open: openProp = true,
+  hasNoActionButtons,
   ...props
 }) => {
   const [isLoading, setIsLoading] = useState(false);
@@ -68,9 +84,14 @@ const TreeAsyncSelectList: FC<Omit<AsyncSelectListProps, 'fetchOptions'>> = ({
   const [glossaries, setGlossaries] = useState<Glossary[]>([]);
   const expandableKeys = useRef<string[]>([]);
   const [expandedRowKeys, setExpandedRowKeys] = useState<Key[]>([]);
-  const [searchOptions, setSearchOptions] = useState<Glossary[]>([]);
+  const [searchOptions, setSearchOptions] = useState<Glossary[] | null>(null);
+  const [open, setOpen] = useState(openProp); // state for controlling dropdown visibility
 
   const form = Form.useFormInstance();
+
+  const handleDropdownVisibleChange = (visible: boolean) => {
+    setOpen(visible);
+  };
 
   const fetchGlossaryListInternal = async () => {
     setIsLoading(true);
@@ -78,7 +99,9 @@ const TreeAsyncSelectList: FC<Omit<AsyncSelectListProps, 'fetchOptions'>> = ({
       const { data } = await getGlossariesList({
         limit: PAGE_SIZE_LARGE,
       });
-      setGlossaries((prev) => [...prev, ...data]);
+      setGlossaries((prev) =>
+        filterTreeNodeOptions([...prev, ...data], filterOptions)
+      );
     } catch (error) {
       showErrorToast(error as AxiosError);
     } finally {
@@ -108,7 +131,6 @@ const TreeAsyncSelectList: FC<Omit<AsyncSelectListProps, 'fetchOptions'>> = ({
         <Button
           data-testid="cancelAssociatedTag"
           size="small"
-          type="link"
           onClick={onCancel}>
           {t('label.cancel')}
         </Button>
@@ -164,6 +186,7 @@ const TreeAsyncSelectList: FC<Omit<AsyncSelectListProps, 'fetchOptions'>> = ({
 
     return (
       <TagsV1
+        isEditTags
         startWith={TAG_START_WITH.SOURCE_ICON}
         tag={tag}
         tagProps={tagProps}
@@ -190,10 +213,10 @@ const TreeAsyncSelectList: FC<Omit<AsyncSelectListProps, 'fetchOptions'>> = ({
       if (lastSelectedMap.has(value)) {
         return lastSelectedMap.get(value) as SelectOption;
       }
-      const initialData = findGlossaryTermByFqn(
+      const initialData = findItemByFqn(
         [
           ...glossaries,
-          ...searchOptions,
+          ...(isNull(searchOptions) ? [] : searchOptions),
           ...(initialOptions ?? []),
         ] as ModifiedGlossaryTerm[],
         value,
@@ -225,14 +248,17 @@ const TreeAsyncSelectList: FC<Omit<AsyncSelectListProps, 'fetchOptions'>> = ({
       const activeGlossary = results[0];
 
       setGlossaries((prev) =>
-        prev.map((glossary) => ({
-          ...glossary,
-          children: get(
-            glossary.id === activeGlossary?.id ? activeGlossary : glossary,
-            'children',
-            []
-          ),
-        }))
+        filterTreeNodeOptions(
+          prev.map((glossary) => ({
+            ...glossary,
+            children: get(
+              glossary.id === activeGlossary?.id ? activeGlossary : glossary,
+              'children',
+              []
+            ),
+          })),
+          filterOptions
+        )
       );
     } catch (error) {
       showErrorToast(error as AxiosError);
@@ -241,14 +267,17 @@ const TreeAsyncSelectList: FC<Omit<AsyncSelectListProps, 'fetchOptions'>> = ({
 
   const onSearch = debounce(async (value: string) => {
     if (value) {
-      const results: Glossary[] = await searchGlossaryTerms(value);
+      setIsLoading(true);
+      const encodedValue = getEncodedFqn(escapeESReservedCharacters(value));
+      const results: Glossary[] = await searchGlossaryTerms(encodedValue);
 
-      setSearchOptions(results);
+      setSearchOptions(filterTreeNodeOptions(results, filterOptions));
       setExpandedRowKeys(
         results.map((result) => result.fullyQualifiedName as string)
       );
+      setIsLoading(false);
     } else {
-      setSearchOptions([]);
+      setSearchOptions(null);
     }
   }, 300);
 
@@ -261,7 +290,7 @@ const TreeAsyncSelectList: FC<Omit<AsyncSelectListProps, 'fetchOptions'>> = ({
   const treeData = useMemo(
     () =>
       convertGlossaryTermsToTreeOptions(
-        isEmpty(searchOptions)
+        isNull(searchOptions)
           ? (glossaries as ModifiedGlossaryTerm[])
           : (searchOptions as unknown as ModifiedGlossaryTerm[])
       ),
@@ -270,23 +299,39 @@ const TreeAsyncSelectList: FC<Omit<AsyncSelectListProps, 'fetchOptions'>> = ({
 
   return (
     <TreeSelect
-      autoFocus
-      open
       showSearch
       treeCheckStrictly
       treeCheckable
+      autoFocus={open}
       className="async-select-list"
       data-testid="tag-selector"
-      dropdownRender={dropdownRender}
+      dropdownRender={
+        hasNoActionButtons ? (menu: ReactElement) => menu : dropdownRender
+      }
       dropdownStyle={{ width: 300 }}
       filterTreeNode={false}
-      loadData={({ id, value }) => {
+      loadData={({ id, name }) => {
         if (expandableKeys.current.includes(id)) {
-          return fetchGlossaryTerm({ glossary: value as string });
+          return fetchGlossaryTerm({ glossary: name as string });
         }
 
         return Promise.resolve();
       }}
+      notFoundContent={
+        isLoading ? (
+          <Loader size="small" />
+        ) : (
+          <Empty
+            description={t('label.no-entity-available', {
+              entity: t('label.glossary-term'),
+            })}
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+        )
+      }
+      open={open}
+      // this popupClassName class is used to identify the dropdown in the playwright tests
+      popupClassName="async-tree-select-list-dropdown"
       showCheckedStrategy={TreeSelect.SHOW_ALL}
       style={{ width: '100%' }}
       switcherIcon={
@@ -300,6 +345,7 @@ const TreeAsyncSelectList: FC<Omit<AsyncSelectListProps, 'fetchOptions'>> = ({
       treeData={treeData}
       treeExpandedKeys={isEmpty(searchOptions) ? undefined : expandedRowKeys}
       onChange={handleChange}
+      onDropdownVisibleChange={handleDropdownVisibleChange}
       onSearch={onSearch}
       onTreeExpand={setExpandedRowKeys}
       {...props}

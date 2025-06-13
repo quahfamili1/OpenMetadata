@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -93,7 +93,7 @@ class OMetaDatabaseServiceTest(TestCase):
         service_db_id = str(
             cls.metadata.get_by_name(
                 entity=DatabaseService, fqn="test-db-service"
-            ).id.__root__
+            ).id.root
         )
 
         cls.metadata.delete(
@@ -199,12 +199,12 @@ class OMetaDatabaseServiceTest(TestCase):
         )
         # Then fetch by ID
         res_id = self.metadata.get_by_id(
-            entity=DatabaseService, entity_id=str(res_name.id.__root__)
+            entity=DatabaseService, entity_id=str(res_name.id.root)
         )
 
         # Delete
         self.metadata.delete(
-            entity=DatabaseService, entity_id=str(res_id.id.__root__), recursive=True
+            entity=DatabaseService, entity_id=str(res_id.id.root), recursive=True
         )
 
         # Then we should not find it
@@ -224,6 +224,6 @@ class OMetaDatabaseServiceTest(TestCase):
         )
 
         res = self.metadata.get_list_entity_versions(
-            entity=DatabaseService, entity_id=res_name.id.__root__
+            entity=DatabaseService, entity_id=res_name.id.root
         )
         assert res

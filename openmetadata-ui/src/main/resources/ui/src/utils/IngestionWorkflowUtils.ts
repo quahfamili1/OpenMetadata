@@ -17,7 +17,9 @@ import {
   Pipeline,
   PipelineType as WorkflowType,
 } from '../generated/api/services/ingestionPipelines/createIngestionPipeline';
+import apiServiceMetadataPipeline from '../jsons/ingestionSchemas/apiServiceMetadataPipeline.json';
 import dashboardMetadataPipeline from '../jsons/ingestionSchemas/dashboardServiceMetadataPipeline.json';
+import databaseAutoClassificationPipeline from '../jsons/ingestionSchemas/databaseServiceAutoClassificationPipeline.json';
 import databaseMetadataPipeline from '../jsons/ingestionSchemas/databaseServiceMetadataPipeline.json';
 import databaseProfilerPipeline from '../jsons/ingestionSchemas/databaseServiceProfilerPipeline.json';
 import databaseLineagePipeline from '../jsons/ingestionSchemas/databaseServiceQueryLineagePipeline.json';
@@ -36,8 +38,11 @@ export const getMetadataSchemaByServiceCategory = (
   serviceCategory: ServiceCategory
 ) => {
   switch (serviceCategory) {
+    case ServiceCategory.METADATA_SERVICES:
     case ServiceCategory.DATABASE_SERVICES:
       return databaseMetadataPipeline;
+    case ServiceCategory.API_SERVICES:
+      return apiServiceMetadataPipeline;
     case ServiceCategory.DASHBOARD_SERVICES:
       return dashboardMetadataPipeline;
     case ServiceCategory.MESSAGING_SERVICES:
@@ -92,6 +97,12 @@ export const getSchemaByWorkflowType = (
     case WorkflowType.Profiler:
       schema = {
         ...databaseProfilerPipeline,
+      };
+
+      break;
+    case WorkflowType.AutoClassification:
+      schema = {
+        ...databaseAutoClassificationPipeline,
       };
 
       break;

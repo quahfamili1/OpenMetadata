@@ -14,10 +14,18 @@ export enum StatusType {
   Success = 'success',
   Warning = 'warning',
   Failure = 'failure',
+  ActiveError = 'activeError',
+  Running = 'running',
+  Started = 'started',
+  Stopped = 'stopped',
+  Pending = 'pending',
+  InReview = 'inReview',
+  Deprecated = 'deprecated',
 }
 
 export interface StatusBadgeProps {
   label: string;
   status: StatusType;
   dataTestId?: string;
+  className?: string;
 }

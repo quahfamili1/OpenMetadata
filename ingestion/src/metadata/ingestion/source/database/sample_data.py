@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -24,6 +24,12 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 from pydantic import ValidationError
 
 from metadata.generated.schema.analytics.reportData import ReportData, ReportDataType
+from metadata.generated.schema.api.data.createAPICollection import (
+    CreateAPICollectionRequest,
+)
+from metadata.generated.schema.api.data.createAPIEndpoint import (
+    CreateAPIEndpointRequest,
+)
 from metadata.generated.schema.api.data.createChart import CreateChartRequest
 from metadata.generated.schema.api.data.createContainer import CreateContainerRequest
 from metadata.generated.schema.api.data.createDashboard import CreateDashboardRequest
@@ -84,6 +90,7 @@ from metadata.generated.schema.entity.data.table import (
 )
 from metadata.generated.schema.entity.data.topic import Topic, TopicSampleData
 from metadata.generated.schema.entity.policies.policy import Policy
+from metadata.generated.schema.entity.services.apiService import ApiService
 from metadata.generated.schema.entity.services.connections.database.customDatabaseConnection import (
     CustomDatabaseConnection,
 )
@@ -104,7 +111,7 @@ from metadata.generated.schema.tests.basic import TestCaseResult, TestResultValu
 from metadata.generated.schema.tests.resolved import Resolved, TestCaseFailureReasonType
 from metadata.generated.schema.tests.testCase import TestCase, TestCaseParameterValue
 from metadata.generated.schema.tests.testSuite import TestSuite
-from metadata.generated.schema.type.basic import Timestamp
+from metadata.generated.schema.type.basic import FullyQualifiedEntityName, Timestamp
 from metadata.generated.schema.type.entityLineage import EntitiesEdge, LineageDetails
 from metadata.generated.schema.type.entityReference import EntityReference
 from metadata.generated.schema.type.lifeCycle import AccessDetails, LifeCycle
@@ -129,12 +136,13 @@ from metadata.parsers.schema_parsers import (
     InvalidSchemaTypeException,
     schema_parser_config_registry,
 )
+from metadata.sampler.models import SampleData, SamplerResponse
 from metadata.utils import entity_link, fqn
 from metadata.utils.constants import UTF_8
 from metadata.utils.fqn import FQN_SEPARATOR
 from metadata.utils.helpers import get_standard_chart_type
 from metadata.utils.logger import ingestion_logger
-from metadata.utils.time_utils import convert_timestamp_to_milliseconds
+from metadata.utils.time_utils import datetime_to_timestamp
 
 logger = ingestion_logger()
 
@@ -192,11 +200,11 @@ class SampleDataSource(
     def __init__(self, config: WorkflowSource, metadata: OpenMetadata):
         super().__init__()
         self.config = config
-        self.service_connection = config.serviceConnection.__root__.config
+        self.service_connection = config.serviceConnection.root.config
         self.metadata = metadata
         self.list_policies = []
 
-        sample_data_folder = self.service_connection.connectionOptions.__root__.get(
+        sample_data_folder = self.service_connection.connectionOptions.root.get(
             "sampleDataFolder"
         )
         if not sample_data_folder:
@@ -235,6 +243,41 @@ class SampleDataSource(
             entity=DatabaseService,
             config=WorkflowSource(**self.glue_database_service_json),
         )
+
+        # MYSQL service for er diagrams
+        self.mysql_database_service_json = json.load(
+            open(  # pylint: disable=consider-using-with
+                sample_data_folder + "/mysql/database_service.json",
+                "r",
+                encoding=UTF_8,
+            )
+        )
+        self.mysql_database = json.load(
+            open(  # pylint: disable=consider-using-with
+                sample_data_folder + "/mysql/database.json",
+                "r",
+                encoding=UTF_8,
+            )
+        )
+        self.mysql_database_schema = json.load(
+            open(  # pylint: disable=consider-using-with
+                sample_data_folder + "/mysql/database_schema.json",
+                "r",
+                encoding=UTF_8,
+            )
+        )
+        self.mysql_tables = json.load(
+            open(  # pylint: disable=consider-using-with
+                sample_data_folder + "/mysql/tables.json",
+                "r",
+                encoding=UTF_8,
+            )
+        )
+        self.mysql_database_service = self.metadata.get_service_or_create(
+            entity=DatabaseService,
+            config=WorkflowSource(**self.mysql_database_service_json),
+        )
+
         self.database_service_json = json.load(
             open(  # pylint: disable=consider-using-with
                 sample_data_folder + "/datasets/service.json",
@@ -536,14 +579,64 @@ class SampleDataSource(
                 encoding=UTF_8,
             )
         )
+        self.api_service_json = json.load(
+            open(  # pylint: disable=consider-using-with
+                sample_data_folder + "/api_service/service.json",
+                "r",
+                encoding=UTF_8,
+            )
+        )
+        self.api_service = self.metadata.get_service_or_create(
+            entity=ApiService,
+            config=WorkflowSource(**self.api_service_json),
+        )
+        self.api_collection = json.load(
+            open(
+                sample_data_folder + "/api_service/api_collection.json",
+                "r",
+                encoding=UTF_8,
+            )
+        )
+        self.api_endpoint = json.load(
+            open(
+                sample_data_folder + "/api_service/api_endpoint.json",
+                "r",
+                encoding=UTF_8,
+            )
+        )
+        self.ometa_api_service_json = json.load(
+            open(  # pylint: disable=consider-using-with
+                sample_data_folder + "/ometa_api_service/service.json",
+                "r",
+                encoding=UTF_8,
+            )
+        )
+        self.ometa_api_service = self.metadata.get_service_or_create(
+            entity=ApiService,
+            config=WorkflowSource(**self.ometa_api_service_json),
+        )
+        self.ometa_api_collection = json.load(
+            open(
+                sample_data_folder + "/ometa_api_service/ometa_api_collection.json",
+                "r",
+                encoding=UTF_8,
+            )
+        )
+        self.ometa_api_endpoint = json.load(
+            open(
+                sample_data_folder + "/ometa_api_service/ometa_api_endpoint.json",
+                "r",
+                encoding=UTF_8,
+            )
+        )
 
     @classmethod
     def create(
         cls, config_dict, metadata: OpenMetadata, pipeline_name: Optional[str] = None
     ):
         """Create class instance"""
-        config: WorkflowSource = WorkflowSource.parse_obj(config_dict)
-        connection: CustomDatabaseConnection = config.serviceConnection.__root__.config
+        config: WorkflowSource = WorkflowSource.model_validate(config_dict)
+        connection: CustomDatabaseConnection = config.serviceConnection.root.config
         if not isinstance(connection, CustomDatabaseConnection):
             raise InvalidSourceException(
                 f"Expected CustomDatabaseConnection, but got {connection}"
@@ -558,6 +651,7 @@ class SampleDataSource(
         yield from self.ingest_users()
         yield from self.ingest_tables()
         yield from self.ingest_glue()
+        yield from self.ingest_mysql()
         yield from self.ingest_stored_procedures()
         yield from self.ingest_topics()
         yield from self.ingest_charts()
@@ -578,6 +672,8 @@ class SampleDataSource(
         yield from self.ingest_logical_test_suite()
         yield from self.ingest_data_insights()
         yield from self.ingest_life_cycle()
+        yield from self.ingest_api_service()
+        yield from self.ingest_ometa_api_service()
 
     def ingest_teams(self) -> Iterable[Either[CreateTeamRequest]]:
         """
@@ -607,13 +703,13 @@ class SampleDataSource(
 
             yield Either(right=team_to_ingest)
 
-    def ingest_glue(self) -> Iterable[Either[Entity]]:
-        """Ingest Sample Data for glue database source"""
+    def ingest_mysql(self) -> Iterable[Either[Entity]]:
+        """Ingest Sample Data for mysql database source including ER diagrams metadata"""
 
         db = CreateDatabaseRequest(
-            name=self.glue_database["name"],
-            description=self.glue_database["description"],
-            service=self.glue_database_service.fullyQualifiedName,
+            name=self.mysql_database["name"],
+            service=self.mysql_database_service.fullyQualifiedName,
+            sourceUrl=self.mysql_database.get("sourceUrl"),
         )
 
         yield Either(right=db)
@@ -621,8 +717,61 @@ class SampleDataSource(
         database_entity = fqn.build(
             self.metadata,
             entity_type=Database,
-            service_name=self.glue_database_service.fullyQualifiedName.__root__,
-            database_name=db.name.__root__,
+            service_name=self.mysql_database_service.fullyQualifiedName.root,
+            database_name=db.name.root,
+        )
+
+        database_object = self.metadata.get_by_name(
+            entity=Database, fqn=database_entity
+        )
+        schema = CreateDatabaseSchemaRequest(
+            name=self.mysql_database_schema["name"],
+            database=database_object.fullyQualifiedName,
+            sourceUrl=self.mysql_database_schema.get("sourceUrl"),
+        )
+        yield Either(right=schema)
+
+        database_schema_entity = fqn.build(
+            self.metadata,
+            entity_type=DatabaseSchema,
+            service_name=self.mysql_database_service.fullyQualifiedName.root,
+            database_name=db.name.root,
+            schema_name=schema.name.root,
+        )
+
+        database_schema_object = self.metadata.get_by_name(
+            entity=DatabaseSchema, fqn=database_schema_entity
+        )
+
+        for table in self.mysql_tables["tables"]:
+            table_request = CreateTableRequest(
+                name=table["name"],
+                description=table["description"],
+                columns=table["columns"],
+                databaseSchema=database_schema_object.fullyQualifiedName,
+                tableConstraints=table.get("tableConstraints"),
+                tableType=table["tableType"],
+                sourceUrl=table.get("sourceUrl"),
+            )
+            yield Either(right=table_request)
+
+    def ingest_glue(self) -> Iterable[Either[Entity]]:
+        """Ingest Sample Data for glue database source"""
+
+        db = CreateDatabaseRequest(
+            name=self.glue_database["name"],
+            description=self.glue_database["description"],
+            service=self.glue_database_service.fullyQualifiedName,
+            sourceUrl=self.glue_database.get("sourceUrl"),
+        )
+
+        yield Either(right=db)
+
+        database_entity = fqn.build(
+            self.metadata,
+            entity_type=Database,
+            service_name=self.glue_database_service.fullyQualifiedName.root,
+            database_name=db.name.root,
         )
 
         database_object = self.metadata.get_by_name(
@@ -632,15 +781,16 @@ class SampleDataSource(
             name=self.glue_database_schema["name"],
             description=self.glue_database_schema["description"],
             database=database_object.fullyQualifiedName,
+            sourceUrl=self.glue_database_schema.get("sourceUrl"),
         )
         yield Either(right=schema)
 
         database_schema_entity = fqn.build(
             self.metadata,
             entity_type=DatabaseSchema,
-            service_name=self.glue_database_service.fullyQualifiedName.__root__,
-            database_name=db.name.__root__,
-            schema_name=schema.name.__root__,
+            service_name=self.glue_database_service.fullyQualifiedName.root,
+            database_name=db.name.root,
+            schema_name=schema.name.root,
         )
 
         database_schema_object = self.metadata.get_by_name(
@@ -655,13 +805,14 @@ class SampleDataSource(
                 databaseSchema=database_schema_object.fullyQualifiedName,
                 tableConstraints=table.get("tableConstraints"),
                 tableType=table["tableType"],
+                sourceUrl=table.get("sourceUrl"),
             )
             yield Either(right=table_request)
 
         database_schema_entity = fqn.build(
             self.metadata,
             entity_type=DatabaseSchema,
-            service_name=self.database_service.fullyQualifiedName.__root__,
+            service_name=self.database_service.fullyQualifiedName.root,
             database_name=self.database["name"],
             schema_name=self.database_schema["name"],
         )
@@ -678,6 +829,7 @@ class SampleDataSource(
                 databaseSchema=database_schema_object.fullyQualifiedName,
                 tableConstraints=table.get("tableConstraints"),
                 tableType=table["tableType"],
+                sourceUrl=table.get("sourceUrl"),
             )
             yield Either(right=table_request)
 
@@ -687,15 +839,17 @@ class SampleDataSource(
         db = CreateDatabaseRequest(
             name=self.database["name"],
             description=self.database["description"],
-            service=self.database_service.fullyQualifiedName.__root__,
+            service=FullyQualifiedEntityName(
+                self.database_service.fullyQualifiedName.root
+            ),
         )
         yield Either(right=db)
 
         database_entity = fqn.build(
             self.metadata,
             entity_type=Database,
-            service_name=self.database_service.name.__root__,
-            database_name=db.name.__root__,
+            service_name=self.database_service.name.root,
+            database_name=db.name.root,
         )
 
         database_object = self.metadata.get_by_name(
@@ -706,15 +860,16 @@ class SampleDataSource(
             name=self.database_schema["name"],
             description=self.database_schema["description"],
             database=database_object.fullyQualifiedName,
+            sourceUrl=self.database_schema.get("sourceUrl"),
         )
         yield Either(right=schema)
 
         database_schema_entity = fqn.build(
             self.metadata,
             entity_type=DatabaseSchema,
-            service_name=self.database_service.name.__root__,
-            database_name=db.name.__root__,
-            schema_name=schema.name.__root__,
+            service_name=self.database_service.name.root,
+            database_name=db.name.root,
+            schema_name=schema.name.root,
         )
 
         database_schema_object = self.metadata.get_by_name(
@@ -734,6 +889,8 @@ class SampleDataSource(
                 tableConstraints=table.get("tableConstraints"),
                 tags=table["tags"],
                 schemaDefinition=table.get("schemaDefinition"),
+                sourceUrl=table.get("sourceUrl"),
+                tablePartition=table.get("tablePartition"),
             )
 
             yield Either(right=table_and_db)
@@ -742,27 +899,33 @@ class SampleDataSource(
                 table_fqn = fqn.build(
                     self.metadata,
                     entity_type=Table,
-                    service_name=self.database_service.name.__root__,
-                    database_name=db.name.__root__,
-                    schema_name=schema.name.__root__,
-                    table_name=table_and_db.name.__root__,
+                    service_name=self.database_service.name.root,
+                    database_name=db.name.root,
+                    schema_name=schema.name.root,
+                    table_name=table_and_db.name.root,
                 )
 
                 table_entity = self.metadata.get_by_name(entity=Table, fqn=table_fqn)
 
                 self.metadata.ingest_table_sample_data(
                     table_entity,
-                    TableData(
-                        rows=table["sampleData"]["rows"],
-                        columns=table["sampleData"]["columns"],
-                    ),
+                    sample_data=SamplerResponse(
+                        table=table_entity,
+                        sample_data=SampleData(
+                            data=TableData(
+                                rows=table["sampleData"]["rows"],
+                                columns=table["sampleData"]["columns"],
+                            ),
+                            store=True,
+                        ),
+                    ).sample_data.data,
                 )
 
             if table.get("customMetrics"):
                 for custom_metric in table["customMetrics"]:
                     self.metadata.create_or_update_custom_metric(
                         CreateCustomMetricRequest(**custom_metric),
-                        table_entity.id.__root__,
+                        table_entity.id.root,
                     )
 
             for column in table.get("columns"):
@@ -770,7 +933,7 @@ class SampleDataSource(
                     for custom_metric in column["customMetrics"]:
                         self.metadata.create_or_update_custom_metric(
                             CreateCustomMetricRequest(**custom_metric),
-                            table_entity.id.__root__,
+                            table_entity.id.root,
                         )
 
     def ingest_stored_procedures(self) -> Iterable[Either[Entity]]:
@@ -779,15 +942,17 @@ class SampleDataSource(
         db = CreateDatabaseRequest(
             name=self.database["name"],
             description=self.database["description"],
-            service=self.database_service.fullyQualifiedName.__root__,
+            service=FullyQualifiedEntityName(
+                self.database_service.fullyQualifiedName.root
+            ),
         )
         yield Either(right=db)
 
         database_entity = fqn.build(
             self.metadata,
             entity_type=Database,
-            service_name=self.database_service.name.__root__,
-            database_name=db.name.__root__,
+            service_name=self.database_service.name.root,
+            database_name=db.name.root,
         )
 
         database_object = self.metadata.get_by_name(
@@ -798,15 +963,16 @@ class SampleDataSource(
             name=self.database_schema["name"],
             description=self.database_schema["description"],
             database=database_object.fullyQualifiedName,
+            sourceUrl=self.database_schema.get("sourceUrl"),
         )
         yield Either(right=schema)
 
         database_schema_entity = fqn.build(
             self.metadata,
             entity_type=DatabaseSchema,
-            service_name=self.database_service.name.__root__,
-            database_name=db.name.__root__,
-            schema_name=schema.name.__root__,
+            service_name=self.database_service.name.root,
+            database_name=db.name.root,
+            schema_name=schema.name.root,
         )
 
         database_schema_object = self.metadata.get_by_name(
@@ -825,6 +991,7 @@ class SampleDataSource(
                 ),
                 databaseSchema=database_schema_object.fullyQualifiedName,
                 tags=stored_procedure["tags"],
+                sourceUrl=stored_procedure.get("sourceUrl"),
             )
 
             yield Either(right=stored_procedure)
@@ -843,13 +1010,11 @@ class SampleDataSource(
             yield Either(
                 right=AddLineageRequest(
                     edge=EntitiesEdge(
-                        fromEntity=EntityReference(
-                            id=from_table.id.__root__, type="table"
-                        ),
-                        toEntity=EntityReference(id=to_table.id.__root__, type="table"),
+                        fromEntity=EntityReference(id=from_table.id.root, type="table"),
+                        toEntity=EntityReference(id=to_table.id.root, type="table"),
                         lineageDetails=LineageDetails(
                             pipeline=EntityReference(
-                                id=stored_procedure_entity.id.__root__,
+                                id=stored_procedure_entity.id.root,
                                 type="storedProcedure",
                             )
                         ),
@@ -897,7 +1062,7 @@ class SampleDataSource(
                 topic_fqn = fqn.build(
                     self.metadata,
                     entity_type=Topic,
-                    service_name=self.kafka_service.name.__root__,
+                    service_name=self.kafka_service.name.root,
                     topic_name=topic["name"],
                 )
 
@@ -998,10 +1163,10 @@ class SampleDataSource(
             right=AddLineageRequest(
                 edge=EntitiesEdge(
                     fromEntity=EntityReference(
-                        id=orders_view.id.__root__, type="dashboardDataModel"
+                        id=orders_view.id.root, type="dashboardDataModel"
                     ),
                     toEntity=EntityReference(
-                        id=orders_explore.id.__root__, type="dashboardDataModel"
+                        id=orders_explore.id.root, type="dashboardDataModel"
                     ),
                 )
             )
@@ -1011,10 +1176,10 @@ class SampleDataSource(
             right=AddLineageRequest(
                 edge=EntitiesEdge(
                     fromEntity=EntityReference(
-                        id=operations_view.id.__root__, type="dashboardDataModel"
+                        id=operations_view.id.root, type="dashboardDataModel"
                     ),
                     toEntity=EntityReference(
-                        id=orders_explore.id.__root__, type="dashboardDataModel"
+                        id=orders_explore.id.root, type="dashboardDataModel"
                     ),
                 )
             )
@@ -1024,10 +1189,10 @@ class SampleDataSource(
             right=AddLineageRequest(
                 edge=EntitiesEdge(
                     fromEntity=EntityReference(
-                        id=orders_explore.id.__root__, type="dashboardDataModel"
+                        id=orders_explore.id.root, type="dashboardDataModel"
                     ),
                     toEntity=EntityReference(
-                        id=orders_dashboard.id.__root__, type="dashboard"
+                        id=orders_dashboard.id.root, type="dashboard"
                     ),
                 )
             )
@@ -1084,10 +1249,10 @@ class SampleDataSource(
 
     def ingest_pipelines(self) -> Iterable[Either[Pipeline]]:
         for pipeline in self.pipelines["pipelines"]:
-            owner = None
+            owners = None
             if pipeline.get("owner"):
-                owner = self.metadata.get_reference_by_email(
-                    email=pipeline.get("owner")
+                owners = self.metadata.get_reference_by_email(
+                    email=pipeline.get("owners")
                 )
             pipeline_ev = CreatePipelineRequest(
                 name=pipeline["name"],
@@ -1096,7 +1261,7 @@ class SampleDataSource(
                 sourceUrl=pipeline["sourceUrl"],
                 tasks=pipeline["tasks"],
                 service=self.pipeline_service.fullyQualifiedName,
-                owner=owner,
+                owners=owners,
                 scheduleInterval=pipeline.get("scheduleInterval"),
             )
             yield Either(right=pipeline_ev)
@@ -1184,13 +1349,15 @@ class SampleDataSource(
                     displayName=model["displayName"],
                     description=model["description"],
                     algorithm=model["algorithm"],
-                    dashboard=dashboard.fullyQualifiedName.__root__,
-                    mlStore=MlStore(
-                        storage=model["mlStore"]["storage"],
-                        imageRepository=model["mlStore"]["imageRepository"],
-                    )
-                    if model.get("mlStore")
-                    else None,
+                    dashboard=dashboard.fullyQualifiedName.root,
+                    mlStore=(
+                        MlStore(
+                            storage=model["mlStore"]["storage"],
+                            imageRepository=model["mlStore"]["imageRepository"],
+                        )
+                        if model.get("mlStore")
+                        else None
+                    ),
                     server=model.get("server"),
                     target=model.get("target"),
                     mlFeatures=self.get_ml_features(model),
@@ -1229,9 +1396,11 @@ class SampleDataSource(
                     name=container["name"],
                     displayName=container["displayName"],
                     description=container["description"],
-                    parent=EntityReference(id=parent_container.id, type="container")
-                    if parent_container_fqn
-                    else None,
+                    parent=(
+                        EntityReference(id=parent_container.id, type="container")
+                        if parent_container_fqn
+                        else None
+                    ),
                     prefix=container["prefix"],
                     dataModel=container.get("dataModel"),
                     numberOfObjects=container.get("numberOfObjects"),
@@ -1257,7 +1426,7 @@ class SampleDataSource(
                     parent_container: Container = (
                         self.metadata.get_by_name(
                             entity=Container,
-                            fqn=self.storage_service.fullyQualifiedName.__root__
+                            fqn=self.storage_service.fullyQualifiedName.root
                             + FQN_SEPARATOR
                             + FQN_SEPARATOR.join(parent_container_fqns),
                         )
@@ -1269,11 +1438,13 @@ class SampleDataSource(
                     yield Either(
                         right=CreateContainerRequest(
                             name=name,
-                            parent=EntityReference(
-                                id=parent_container.id, type="container"
-                            )
-                            if parent_container
-                            else None,
+                            parent=(
+                                EntityReference(
+                                    id=parent_container.id, type="container"
+                                )
+                                if parent_container
+                                else None
+                            ),
                             service=self.storage_service.fullyQualifiedName,
                         )
                     )
@@ -1339,21 +1510,22 @@ class SampleDataSource(
                             createDateTime=profile.get("createDateTime"),
                             sizeInByte=profile.get("sizeInByte"),
                             customMetrics=profile.get("customMetrics"),
-                            timestamp=int(
-                                (
-                                    datetime.now(tz=timezone.utc) - timedelta(days=days)
-                                ).timestamp()
-                                * 1000
+                            timestamp=Timestamp(
+                                int(
+                                    (datetime.now() - timedelta(days=days)).timestamp()
+                                    * 1000
+                                )
                             ),
                         ),
                         columnProfile=[
                             ColumnProfile(
-                                timestamp=int(
-                                    (
-                                        datetime.now(tz=timezone.utc)
-                                        - timedelta(days=days)
-                                    ).timestamp()
-                                    * 1000
+                                timestamp=Timestamp(
+                                    int(
+                                        (
+                                            datetime.now() - timedelta(days=days)
+                                        ).timestamp()
+                                        * 1000
+                                    )
                                 ),
                                 **col_profile,
                             )
@@ -1361,14 +1533,16 @@ class SampleDataSource(
                         ],
                         systemProfile=[
                             SystemProfile(
-                                timestamp=int(
-                                    (
-                                        datetime.now(tz=timezone.utc)
-                                        - timedelta(
-                                            days=days, hours=random.randint(0, 24)
-                                        )
-                                    ).timestamp()
-                                    * 1000
+                                timestamp=Timestamp(
+                                    int(
+                                        (
+                                            datetime.now()
+                                            - timedelta(
+                                                days=days, hours=random.randint(0, 24)
+                                            )
+                                        ).timestamp()
+                                        * 1000
+                                    )
                                 ),
                                 **system_profile,
                             )
@@ -1386,9 +1560,7 @@ class SampleDataSource(
                     test_suite=CreateTestSuiteRequest(
                         name=test_suite["testSuiteName"],
                         description=test_suite["testSuiteDescription"],
-                        executableEntityReference=test_suite[
-                            "executableEntityReference"
-                        ],
+                        basicEntityReference=test_suite["executableEntityReference"],
                     )
                 )
             )
@@ -1431,11 +1603,11 @@ class SampleDataSource(
                         description=test_case["description"],
                         testDefinition=test_case["testDefinitionName"],
                         entityLink=test_case["entityLink"],
-                        testSuite=suite.fullyQualifiedName.__root__,
                         parameterValues=[
                             TestCaseParameterValue(**param_values)
                             for param_values in test_case["parameterValues"]
                         ],
+                        useDynamicAssertion=test_case.get("useDynamicAssertion", False),
                     )  # type: ignore
                 )
                 yield Either(right=test_case_req)
@@ -1467,10 +1639,10 @@ class SampleDataSource(
                             )
                             create_test_case_resolution.testCaseResolutionStatusDetails = Assigned(
                                 assignee=EntityReference(
-                                    id=user.id.__root__,
+                                    id=user.id.root,
                                     type="user",
-                                    name=user.name.__root__,
-                                    fullyQualifiedName=user.fullyQualifiedName.__root__,
+                                    name=user.name.root,
+                                    fullyQualifiedName=user.fullyQualifiedName.root,
                                 )
                             )
                         if resolution["testCaseResolutionStatusType"] == "Resolved":
@@ -1479,10 +1651,10 @@ class SampleDataSource(
                             )
                             create_test_case_resolution.testCaseResolutionStatusDetails = Resolved(
                                 resolvedBy=EntityReference(
-                                    id=user.id.__root__,
+                                    id=user.id.root,
                                     type="user",
-                                    name=user.name.__root__,
-                                    fullyQualifiedName=user.fullyQualifiedName.__root__,
+                                    name=user.name.root,
+                                    fullyQualifiedName=user.fullyQualifiedName.root,
                                 ),
                                 testCaseFailureReason=random.choice(
                                     list(TestCaseFailureReasonType)
@@ -1508,18 +1680,22 @@ class SampleDataSource(
                 for days, result in enumerate(test_case_results["results"]):
                     test_case_result_req = OMetaTestCaseResultsSample(
                         test_case_results=TestCaseResult(
-                            timestamp=int(
-                                (datetime.now() - timedelta(days=days)).timestamp()
-                                * 1000
+                            timestamp=Timestamp(
+                                int(
+                                    (datetime.now() - timedelta(days=days)).timestamp()
+                                    * 1000
+                                )
                             ),
                             testCaseStatus=result["testCaseStatus"],
                             result=result["result"],
                             testResultValue=[
-                                TestResultValue.parse_obj(res_value)
+                                TestResultValue.model_validate(res_value)
                                 for res_value in result["testResultValues"]
                             ],
+                            minBound=result.get("minBound"),
+                            maxBound=result.get("maxBound"),
                         ),
-                        test_case_name=case.fullyQualifiedName.__root__,
+                        test_case_name=case.fullyQualifiedName.root,
                     )
                     yield Either(right=test_case_result_req)
             if test_case_results.get("failedRowsSample"):
@@ -1528,6 +1704,9 @@ class SampleDataSource(
                     TableData(
                         rows=test_case_results["failedRowsSample"]["rows"],
                         columns=test_case_results["failedRowsSample"]["columns"],
+                    ),
+                    validate=test_case_results["failedRowsSample"].get(
+                        "validate", True
                     ),
                 )
             if test_case_results.get("inspectionQuery"):
@@ -1545,9 +1724,10 @@ class SampleDataSource(
             for report_datum in report_data:
                 if report_type == ReportDataType.rawCostAnalysisReportData.value:
                     start_ts = int(
-                        (datetime.utcnow() - timedelta(days=60)).timestamp() * 1000
+                        (datetime.now(timezone.utc) - timedelta(days=60)).timestamp()
+                        * 1000
                     )
-                    end_ts = int(datetime.utcnow().timestamp() * 1000)
+                    end_ts = int(datetime.now(timezone.utc).timestamp() * 1000)
                     tmstp = random.randint(start_ts, end_ts)
                     report_datum["data"]["lifeCycle"]["accessed"]["timestamp"] = tmstp
                 record = OMetaDataInsightSample(
@@ -1555,7 +1735,7 @@ class SampleDataSource(
                         id=report_datum["id"],
                         reportDataType=report_datum["reportDataType"],
                         timestamp=Timestamp(
-                            __root__=int(
+                            root=int(
                                 (datetime.now() - timedelta(days=i)).timestamp() * 1000
                             )
                         ),
@@ -1571,37 +1751,40 @@ class SampleDataSource(
             life_cycle = table_life_cycle["lifeCycle"]
             life_cycle_data = LifeCycle()
             life_cycle_data.created = AccessDetails(
-                timestamp=convert_timestamp_to_milliseconds(
+                timestamp=Timestamp(
                     int(
-                        (
-                            datetime.now()
-                            - timedelta(days=life_cycle["created"]["days"])
-                        ).timestamp()
+                        datetime_to_timestamp(
+                            datetime_value=datetime.now()
+                            - timedelta(days=life_cycle["created"]["days"]),
+                            milliseconds=True,
+                        )
                     )
                 ),
                 accessedByAProcess=life_cycle["created"].get("accessedByAProcess"),
             )
 
             life_cycle_data.updated = AccessDetails(
-                timestamp=convert_timestamp_to_milliseconds(
+                timestamp=Timestamp(
                     int(
-                        (
-                            datetime.now()
-                            - timedelta(days=life_cycle["updated"]["days"])
-                        ).timestamp()
-                    )
+                        datetime_to_timestamp(
+                            datetime_value=datetime.now()
+                            - timedelta(days=life_cycle["updated"]["days"]),
+                            milliseconds=True,
+                        )
+                    ),
                 ),
                 accessedByAProcess=life_cycle["updated"].get("accessedByAProcess"),
             )
 
             life_cycle_data.accessed = AccessDetails(
-                timestamp=convert_timestamp_to_milliseconds(
+                timestamp=Timestamp(
                     int(
-                        (
-                            datetime.now()
-                            - timedelta(days=life_cycle["accessed"]["days"])
-                        ).timestamp()
-                    )
+                        datetime_to_timestamp(
+                            datetime_value=datetime.now()
+                            - timedelta(days=life_cycle["accessed"]["days"]),
+                            milliseconds=True,
+                        )
+                    ),
                 ),
                 accessedByAProcess=life_cycle["accessed"].get("accessedByAProcess"),
             )
@@ -1636,3 +1819,24 @@ class SampleDataSource(
 
     def test_connection(self) -> None:
         """Custom sources don't support testing connections"""
+
+    def ingest_api_service(self) -> Iterable[Either[Entity]]:
+        """Ingest API services"""
+
+        collection_request = CreateAPICollectionRequest(**self.api_collection)
+        yield Either(right=collection_request)
+
+        for endpoint in self.api_endpoint.get("endpoints"):
+            endpoint_request = CreateAPIEndpointRequest(**endpoint)
+            yield Either(right=endpoint_request)
+
+    def ingest_ometa_api_service(self) -> Iterable[Either[Entity]]:
+        """Ingest users & tables ometa API services"""
+
+        for collection in self.ometa_api_collection.get("collections"):
+            collection_request = CreateAPICollectionRequest(**collection)
+            yield Either(right=collection_request)
+
+        for endpoint in self.ometa_api_endpoint.get("endpoints"):
+            endpoint_request = CreateAPIEndpointRequest(**endpoint)
+            yield Either(right=endpoint_request)

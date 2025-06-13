@@ -10,12 +10,18 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-import { EntityReference } from '../../../generated/tests/testCase';
+import { EntityReference, TestCase } from '../../../generated/tests/testCase';
+import { ListTestCaseParamsBySearch } from '../../../rest/testAPI';
 
 export interface AddTestCaseModalProps {
   onCancel?: () => void;
-  onSubmit: (testCaseIds: string[]) => void;
+  onSubmit?: (testCases: TestCase[]) => void | Promise<void>;
+  onChange?: (testCases: TestCase[]) => void;
   existingTest?: EntityReference[];
   cancelText?: string;
   submitText?: string;
+  filters?: string;
+  testCaseParams?: ListTestCaseParamsBySearch;
+  selectedTest?: string[];
+  showButton?: boolean;
 }

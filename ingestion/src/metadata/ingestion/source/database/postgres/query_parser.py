@@ -1,8 +1,8 @@
-#  Copyright 2021 Collate
-#  Licensed under the Apache License, Version 2.0 (the "License");
+#  Copyright 2025 Collate
+#  Licensed under the Collate Community License, Version 1.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  http://www.apache.org/licenses/LICENSE-2.0
+#  https://github.com/open-metadata/OpenMetadata/blob/main/ingestion/LICENSE
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -56,8 +56,8 @@ class PostgresQueryParserSource(QueryParserSource, ABC):
     def create(
         cls, config_dict, metadata: OpenMetadata, pipeline_name: Optional[str] = None
     ):
-        config: WorkflowSource = WorkflowSource.parse_obj(config_dict)
-        connection: PostgresConnection = config.serviceConnection.__root__.config
+        config: WorkflowSource = WorkflowSource.model_validate(config_dict)
+        connection: PostgresConnection = config.serviceConnection.root.config
         if not isinstance(connection, PostgresConnection):
             raise InvalidSourceException(
                 f"Expected PostgresConnection, but got {connection}"
@@ -81,7 +81,7 @@ class PostgresQueryParserSource(QueryParserSource, ABC):
             if self.config.sourceConfig.config.queryLogFilePath:
                 yield from super().yield_table_queries_from_logs()
             else:
-                database = self.config.serviceConnection.__root__.config.database
+                database = self.config.serviceConnection.root.config.database
                 if database:
                     self.engine: Engine = get_connection(self.service_connection)
                     yield from self.process_table_query()
@@ -90,7 +90,7 @@ class PostgresQueryParserSource(QueryParserSource, ABC):
                     for res in results:
                         row = list(res)
                         logger.info(f"Ingesting from database: {row[0]}")
-                        self.config.serviceConnection.__root__.config.database = row[0]
+                        self.config.serviceConnection.root.config.database = row[0]
                         self.engine = get_connection(self.service_connection)
                         yield from self.process_table_query()
 
